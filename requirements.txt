@@ -1,0 +1,41 @@
+# ==============================================================================
+# Job Search Automation Engine & Web Application Dependencies
+# ==============================================================================
+
+# --- Web Server & Framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.12
+websockets>=13.0.0,<17.0
+
+# --- HTTP Networking & Web Scraping ---
+httpx>=0.27.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# --- Headless Browser Automation ---
+playwright>=1.40.0
+playwright-stealth>=1.0.6
+
+# --- AI, LLM & Cloud Integrations ---
+google-genai>=1.0.0
+openai>=1.50.0
+
+# --- Background Task Scheduling & Logic ---
+APScheduler>=3.10.0
+pydantic>=2.8.0
+rapidfuzz>=3.8.0
+PyYAML>=6.0.1
+python-dateutil>=2.9.0
+
+# --- Document Parsing & Generation (Resume / Cover Letter) ---
+pypdf>=4.0.0
+pypdfium2>=4.30.0
+pytesseract>=0.3.10
+pillow>=10.0.0
+pdf2image>=1.17.0
+python-docx>=1.1.0
+
+# --- Security, Cryptography & Environment ---
+cryptography>=42.0.0
+python-dotenv>=1.0.0

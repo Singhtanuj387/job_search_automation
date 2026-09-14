@@ -1,0 +1,34 @@
+# Virtual environment & Python cache
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node dependencies
+node_modules/
+web/frontend/node_modules/
+
+# Local data, large databases & run artifacts
+data/
+uploads/
+logs/
+results.json
+run_report.json
+scratch/
+scratch_*
+
+# Documents & resumes
+*.docx
+*.pdf
+
+# Secrets & credentials
+rootkey.csv
+*.key
+.env
+.env.*
+
+# Git
+.git/
+.gitignore

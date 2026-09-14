@@ -1,0 +1,36 @@
+# Virtual environment & caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node
+node_modules/
+web/frontend/node_modules/
+
+# Local databases & user data (1GB+ database)
+data/
+**/data/*.db
+**/data/*.db-journal
+**/data/*.sqlite*
+**/data/*.key
+**/data/*.json
+**/data/materials/
+**/data/profile_resumes/
+**/data/indeed_*
+web/backend/data/
+uploads/
+logs/
+results.json
+run_report.json
+scratch/
+scratch_*
+
+# Generated and uploaded docs
+*.docx
+*.pdf
+
+# Credentials & secrets
+rootkey.csv
+.env
+.env.*
