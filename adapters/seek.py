@@ -303,7 +303,10 @@ class SeekAdapter(BaseAdapter):
             job_loc = city
             salary = item.get("salary", "Competitive Market Rate")
 
-            url = f"{self.base_url}/job/{jid}"
+            clean_city = str(job_loc or "").replace(" NSW", "").replace(" VIC", "").replace(" QLD", "").replace(" WA", "").replace(" SA", "").replace(" ACT", "").replace(" NZ", "").strip()
+            loc_param = f"&where={quote_plus(clean_city)}" if clean_city and clean_city.lower() not in ["any", "remote"] else ""
+            seek_query = f"{company} {title}".strip() if company else title
+            url = f"{self.base_url}/jobs?keywords={quote_plus(seek_query)}{loc_param}"
             desc = (
                 f"Exceptional opportunity for a {title} to join {company} in {job_loc}. "
                 f"You will design scalable software architecture, build resilient systems, "
