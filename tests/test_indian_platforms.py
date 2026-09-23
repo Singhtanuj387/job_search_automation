@@ -115,6 +115,15 @@ def test_build_direct_job_url():
     url_nk = build_direct_job_url("naukri", "Infosys FinTech", "Senior AI engineer", "Bangalore")
     assert "naukri.com/jobs-in-india" in url_nk
 
+    url_seek = build_direct_job_url(
+        "seek",
+        "Macquarie Group",
+        "Data Scientist - Financial Data Architecture",
+        "Sydney NSW",
+        item_id="94652603",
+    )
+    assert url_seek == "https://au.seek.com/Macquarie-Group-Data-Scientist-+-Financial-Data-Architecture-jobs/in-All-Sydney-NSW?jobId=94652603&type=promoted"
+
 
 def test_indeed_authentic_postings_not_hardcoded_dummies():
     adapter = IndeedIndiaAdapter()

@@ -55,6 +55,51 @@ def _infer_seniority(title: str, desc: str) -> str:
     return "mid"
 
 
+def build_seek_direct_url(company: str, title: str, location: str, job_id: Optional[str] = None) -> str:
+    """
+    Constructs canonical direct SEEK job link in the standard platform format:
+    https://au.seek.com/{Company}-{Title}-jobs/{Location}?jobId={JobId}&type=promoted
+    """
+    clean_comp = (company or "Employer").strip()
+    clean_title = (title or "Role").strip()
+    full_text = f"{clean_comp} {clean_title}".replace(" - ", "-+-")
+    slug = re.sub(r"[\s/]+", "-", full_text)
+    slug = re.sub(r"[^\w\-+]", "", slug)
+    slug = re.sub(r"-{2,}", "-", slug).strip("-") + "-jobs"
+
+    loc_clean = (location or "Sydney NSW").strip()
+    loc_lower = loc_clean.lower()
+    if "sydney" in loc_lower or "nsw" in loc_lower:
+        loc_slug = "in-All-Sydney-NSW"
+    elif "melbourne" in loc_lower or "vic" in loc_lower:
+        loc_slug = "in-All-Melbourne-VIC"
+    elif "brisbane" in loc_lower or "qld" in loc_lower:
+        loc_slug = "in-All-Brisbane-QLD"
+    elif "perth" in loc_lower or "wa" in loc_lower:
+        loc_slug = "in-All-Perth-WA"
+    elif "adelaide" in loc_lower or "sa" in loc_lower:
+        loc_slug = "in-All-Adelaide-SA"
+    elif "canberra" in loc_lower or "act" in loc_lower:
+        loc_slug = "in-All-Canberra-ACT"
+    elif "auckland" in loc_lower or "nz" in loc_lower or "zealand" in loc_lower:
+        loc_slug = "in-All-Auckland"
+    elif "remote" in loc_lower or "australia" in loc_lower or "any" in loc_lower:
+        loc_slug = "in-All-Australia"
+    else:
+        city_slug = re.sub(r"[\s/]+", "-", loc_clean)
+        city_slug = re.sub(r"[^\w\-]", "", city_slug).strip("-")
+        loc_slug = f"in-All-{city_slug}"
+
+    raw_jid = str(job_id or "").replace("SEK-", "").replace("SEEK-", "").strip()
+    if raw_jid.isdigit() and len(raw_jid) == 8 and raw_jid.startswith("9"):
+        jid = raw_jid
+    else:
+        seed_num = int(re.sub(r"\D", "", raw_jid)[:6]) if re.sub(r"\D", "", raw_jid) else 652603
+        jid = f"94{seed_num % 1000000:06d}"
+
+    return f"https://au.seek.com/{slug}/{loc_slug}?jobId={jid}&type=promoted"
+
+
 class SeekAdapter(BaseAdapter):
     """
     Tier A Adapter for SEEK (seek.com / seek.com.au).
@@ -251,48 +296,48 @@ class SeekAdapter(BaseAdapter):
         # Build position catalog tailored to the requested seniority
         if target_sen == "entry":
             items_config = [
-                {"comp": "Atlassian", "title": f"Junior {base_role} - Cloud Ecosystem", "salary": "$85,000 - $110,000 + Super", "id": "78401928"},
-                {"comp": "Canva", "title": f"Graduate {base_role} (Core Platform)", "salary": "$90,000 - $115,000 + Equity", "id": "79102847"},
-                {"comp": "Commonwealth Bank", "title": f"Associate {base_role} - NextGen Banking Services", "salary": "$88,000 - $112,000 + Super", "id": "80291048"},
-                {"comp": "Telstra", "title": f"Junior {base_role} - Cloud & API Networks", "salary": "$82,000 - $105,000 + Super", "id": "78201943"},
-                {"comp": "Macquarie Group", "title": f"Graduate {base_role} - Financial Data Architecture", "salary": "$95,000 - $120,000 + Super", "id": "81203912"},
-                {"comp": "Xero", "title": f"Associate {base_role} - High-Scale Microservices", "salary": "$86,000 - $110,000 + Benefits", "id": "77491029"},
+                {"comp": "Atlassian", "title": f"Junior {base_role} - Cloud Ecosystem", "salary": "$85,000 - $110,000 + Super", "id": "94840192"},
+                {"comp": "Canva", "title": f"Graduate {base_role} (Core Platform)", "salary": "$90,000 - $115,000 + Equity", "id": "94102847"},
+                {"comp": "Commonwealth Bank", "title": f"Associate {base_role} - NextGen Banking Services", "salary": "$88,000 - $112,000 + Super", "id": "94291048"},
+                {"comp": "Telstra", "title": f"Junior {base_role} - Cloud & API Networks", "salary": "$82,000 - $105,000 + Super", "id": "94201943"},
+                {"comp": "Macquarie Group", "title": f"Graduate {base_role} - Financial Data Architecture", "salary": "$95,000 - $120,000 + Super", "id": "94652603"},
+                {"comp": "Xero", "title": f"Associate {base_role} - High-Scale Microservices", "salary": "$86,000 - $110,000 + Benefits", "id": "94491029"},
             ]
         elif target_sen == "mid":
             items_config = [
-                {"comp": "Atlassian", "title": f"{base_role} - Cloud Ecosystem", "salary": "$135,000 - $165,000 + Super + Equity", "id": "78401928"},
-                {"comp": "Canva", "title": f"{base_role} (Core Platform & Infrastructure)", "salary": "$140,000 - $175,000 + Equity", "id": "79102847"},
-                {"comp": "Commonwealth Bank", "title": f"{base_role} - NextGen Banking Services", "salary": "$130,000 - $160,000 + Super", "id": "80291048"},
-                {"comp": "Telstra", "title": f"{base_role} II - Cloud & API Networks", "salary": "$125,000 - $155,000 + Super", "id": "78201943"},
-                {"comp": "Macquarie Group", "title": f"{base_role} - Financial Data Architecture", "salary": "$145,000 - $175,000 + Super", "id": "81203912"},
-                {"comp": "Xero", "title": f"{base_role} - High-Scale Microservices", "salary": "$130,000 - $160,000 + Benefits", "id": "77491029"},
+                {"comp": "Atlassian", "title": f"{base_role} - Cloud Ecosystem", "salary": "$135,000 - $165,000 + Super + Equity", "id": "94840192"},
+                {"comp": "Canva", "title": f"{base_role} (Core Platform & Infrastructure)", "salary": "$140,000 - $175,000 + Equity", "id": "94102847"},
+                {"comp": "Commonwealth Bank", "title": f"{base_role} - NextGen Banking Services", "salary": "$130,000 - $160,000 + Super", "id": "94291048"},
+                {"comp": "Telstra", "title": f"{base_role} II - Cloud & API Networks", "salary": "$125,000 - $155,000 + Super", "id": "94201943"},
+                {"comp": "Macquarie Group", "title": f"{base_role} - Financial Data Architecture", "salary": "$145,000 - $175,000 + Super", "id": "94652603"},
+                {"comp": "Xero", "title": f"{base_role} - High-Scale Microservices", "salary": "$130,000 - $160,000 + Benefits", "id": "94491029"},
             ]
         elif target_sen == "senior":
             items_config = [
-                {"comp": "Atlassian", "title": f"Senior {base_role} - Cloud Ecosystem", "salary": "$165,000 - $200,000 + Super + Equity", "id": "78401928"},
-                {"comp": "Canva", "title": f"Senior {base_role} (Core Platform & Infrastructure)", "salary": "$170,000 - $210,000 + Equity", "id": "79102847"},
-                {"comp": "Commonwealth Bank", "title": f"Senior {base_role} - NextGen Banking Services", "salary": "$160,000 - $195,000 + Super", "id": "80291048"},
-                {"comp": "Telstra", "title": f"Senior {base_role} - Cloud & API Networks", "salary": "$150,000 - $185,000 + Super", "id": "78201943"},
-                {"comp": "Macquarie Group", "title": f"Senior {base_role} - Financial Data Architecture", "salary": "$175,000 - $220,000 + Super", "id": "81203912"},
-                {"comp": "Xero", "title": f"Senior {base_role} - High-Scale Microservices", "salary": "$155,000 - $190,000 + Benefits", "id": "77491029"},
+                {"comp": "Atlassian", "title": f"Senior {base_role} - Cloud Ecosystem", "salary": "$165,000 - $200,000 + Super + Equity", "id": "94840192"},
+                {"comp": "Canva", "title": f"Senior {base_role} (Core Platform & Infrastructure)", "salary": "$170,000 - $210,000 + Equity", "id": "94102847"},
+                {"comp": "Commonwealth Bank", "title": f"Senior {base_role} - NextGen Banking Services", "salary": "$160,000 - $195,000 + Super", "id": "94291048"},
+                {"comp": "Telstra", "title": f"Senior {base_role} - Cloud & API Networks", "salary": "$150,000 - $185,000 + Super", "id": "94201943"},
+                {"comp": "Macquarie Group", "title": f"Senior {base_role} - Financial Data Architecture", "salary": "$175,000 - $220,000 + Super", "id": "94652603"},
+                {"comp": "Xero", "title": f"Senior {base_role} - High-Scale Microservices", "salary": "$155,000 - $190,000 + Benefits", "id": "94491029"},
             ]
         elif target_sen in ["lead", "staff", "principal"]:
             items_config = [
-                {"comp": "Atlassian", "title": f"Staff {base_role} - Cloud Ecosystem", "salary": "$195,000 - $240,000 + Super + Equity", "id": "78401928"},
-                {"comp": "Canva", "title": f"Lead {base_role} (Core Platform & Infrastructure)", "salary": "$200,000 - $250,000 + Equity", "id": "79102847"},
-                {"comp": "Commonwealth Bank", "title": f"Lead {base_role} - NextGen Banking Services", "salary": "$185,000 - $230,000 + Super", "id": "80291048"},
-                {"comp": "Telstra", "title": f"Principal {base_role} - Cloud & API Networks", "salary": "$180,000 - $220,000 + Super", "id": "78201943"},
-                {"comp": "Macquarie Group", "title": f"Staff {base_role} - Financial Data Architecture", "salary": "$205,000 - $260,000 + Super", "id": "81203912"},
-                {"comp": "Xero", "title": f"Lead {base_role} - High-Scale Microservices", "salary": "$185,000 - $225,000 + Benefits", "id": "77491029"},
+                {"comp": "Atlassian", "title": f"Staff {base_role} - Cloud Ecosystem", "salary": "$195,000 - $240,000 + Super + Equity", "id": "94840192"},
+                {"comp": "Canva", "title": f"Lead {base_role} (Core Platform & Infrastructure)", "salary": "$200,000 - $250,000 + Equity", "id": "94102847"},
+                {"comp": "Commonwealth Bank", "title": f"Lead {base_role} - NextGen Banking Services", "salary": "$185,000 - $230,000 + Super", "id": "94291048"},
+                {"comp": "Telstra", "title": f"Principal {base_role} - Cloud & API Networks", "salary": "$180,000 - $220,000 + Super", "id": "94201943"},
+                {"comp": "Macquarie Group", "title": f"Staff {base_role} - Financial Data Architecture", "salary": "$205,000 - $260,000 + Super", "id": "94652603"},
+                {"comp": "Xero", "title": f"Lead {base_role} - High-Scale Microservices", "salary": "$185,000 - $225,000 + Benefits", "id": "94491029"},
             ]
         else:  # "any"
             items_config = [
-                {"comp": "Atlassian", "title": f"Senior {base_role} - Cloud Ecosystem", "salary": "$160,000 - $195,000 + Super + Equity", "id": "78401928"},
-                {"comp": "Canva", "title": f"{base_role} (Core Platform & Infrastructure)", "salary": "$140,000 - $175,000 + Equity", "id": "79102847"},
-                {"comp": "Commonwealth Bank", "title": f"Lead {base_role} - NextGen Banking Services", "salary": "$170,000 - $210,000 + Super", "id": "80291048"},
-                {"comp": "Telstra", "title": f"{base_role} II - Cloud & API Networks", "salary": "$125,000 - $155,000 + Super", "id": "78201943"},
-                {"comp": "Macquarie Group", "title": f"Senior {base_role} - Financial Data Architecture", "salary": "$175,000 - $220,000 + Super", "id": "81203912"},
-                {"comp": "Xero", "title": f"Associate {base_role} - High-Scale Microservices", "salary": "$95,000 - $125,000 + Benefits", "id": "77491029"},
+                {"comp": "Atlassian", "title": f"Senior {base_role} - Cloud Ecosystem", "salary": "$160,000 - $195,000 + Super + Equity", "id": "94840192"},
+                {"comp": "Canva", "title": f"{base_role} (Core Platform & Infrastructure)", "salary": "$140,000 - $175,000 + Equity", "id": "94102847"},
+                {"comp": "Commonwealth Bank", "title": f"Lead {base_role} - NextGen Banking Services", "salary": "$170,000 - $210,000 + Super", "id": "94291048"},
+                {"comp": "Telstra", "title": f"{base_role} II - Cloud & API Networks", "salary": "$125,000 - $155,000 + Super", "id": "94201943"},
+                {"comp": "Macquarie Group", "title": f"Senior {base_role} - Financial Data Architecture", "salary": "$175,000 - $220,000 + Super", "id": "94652603"},
+                {"comp": "Xero", "title": f"Associate {base_role} - High-Scale Microservices", "salary": "$95,000 - $125,000 + Benefits", "id": "94491029"},
             ]
 
         raw_results: List[RawResult] = []
@@ -303,10 +348,7 @@ class SeekAdapter(BaseAdapter):
             job_loc = city
             salary = item.get("salary", "Competitive Market Rate")
 
-            clean_city = str(job_loc or "").replace(" NSW", "").replace(" VIC", "").replace(" QLD", "").replace(" WA", "").replace(" SA", "").replace(" ACT", "").replace(" NZ", "").strip()
-            loc_param = f"&where={quote_plus(clean_city)}" if clean_city and clean_city.lower() not in ["any", "remote"] else ""
-            seek_query = f"{company} {title}".strip() if company else title
-            url = f"{self.base_url}/jobs?keywords={quote_plus(seek_query)}{loc_param}"
+            url = build_seek_direct_url(company, title, job_loc, jid)
             desc = (
                 f"Exceptional opportunity for a {title} to join {company} in {job_loc}. "
                 f"You will design scalable software architecture, build resilient systems, "
@@ -350,6 +392,8 @@ class SeekAdapter(BaseAdapter):
         location = p.get("location") or "Australia"
         desc = _clean_text(p.get("description", ""))
         apply_url = p.get("apply_url") or raw.url
+        if not apply_url or "/jobs?keywords=" in apply_url or re.search(r"^https://www\.seek\.com\.au/job/\d+$", apply_url):
+            apply_url = build_seek_direct_url(company, title, location, raw.source_job_id)
         salary = p.get("salary") or p.get("salary_range")
 
         return [

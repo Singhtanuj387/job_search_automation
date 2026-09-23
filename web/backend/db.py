@@ -3,6 +3,7 @@ Separate Application Database (SQLite: data/app.db).
 Manages profile, chat history, tracker entries, encrypted secrets, and scheduler config.
 """
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -1289,7 +1290,7 @@ class AppDatabase:
             opp_rows = conn.execute("""
                 SELECT id, source, company, title, location, apply_url, source_job_id
                 FROM job_opportunities
-                WHERE source IN ('foundit', 'timesjobs', 'glassdoor', 'hirist', 'wellfound', 'indeed', 'naukri', 'cutshort', 'shine')
+                WHERE source IN ('foundit', 'timesjobs', 'glassdoor', 'hirist', 'wellfound', 'indeed', 'naukri', 'cutshort', 'shine', 'seek')
                    OR apply_url LIKE '%/job/%'
                    OR apply_url LIKE '%/job-%'
                    OR apply_url LIKE '%foundit%'
@@ -1298,13 +1299,14 @@ class AppDatabase:
                    OR apply_url LIKE '%viewjob?jk=%'
                    OR apply_url LIKE '%Senior+Senior%'
                    OR apply_url LIKE '%Senior%20Senior%'
+                   OR apply_url LIKE '%seek.com%'
             """).fetchall()
 
             for row in opp_rows:
                 old_url = row["apply_url"] or ""
                 if "test-" in old_url.lower() and "Other Co" not in (row["company"] or ""):
                     continue
-                clean_title = _clean_role_and_title(row["title"])
+                clean_title = _clean_role_and_title(row["title"]) if row["source"] != "seek" else row["title"]
                 item_id = row["source_job_id"] or ""
                 c_norm = (row["company"] or "").strip().lower()
                 if row["source"] == "indeed":
@@ -1340,7 +1342,7 @@ class AppDatabase:
             tracker_rows = conn.execute("""
                 SELECT id, company, title, location, source, apply_url, job_id
                 FROM tracker
-                WHERE source IN ('foundit', 'timesjobs', 'glassdoor', 'hirist', 'wellfound', 'indeed', 'naukri', 'cutshort', 'shine')
+                WHERE source IN ('foundit', 'timesjobs', 'glassdoor', 'hirist', 'wellfound', 'indeed', 'naukri', 'cutshort', 'shine', 'seek')
                    OR apply_url LIKE '%/job/%'
                    OR apply_url LIKE '%/job-%'
                    OR apply_url LIKE '%foundit%'
@@ -1349,6 +1351,7 @@ class AppDatabase:
                    OR apply_url LIKE '%viewjob?jk=%'
                    OR apply_url LIKE '%Senior+Senior%'
                    OR apply_url LIKE '%Senior%20Senior%'
+                   OR apply_url LIKE '%seek.com%'
             """).fetchall()
 
             for row in tracker_rows:
@@ -1357,13 +1360,13 @@ class AppDatabase:
                     continue
                 source = (row["source"] or "").lower().strip()
                 if not source:
-                    for s in ["foundit", "timesjobs", "glassdoor", "hirist", "wellfound", "indeed", "naukri", "cutshort", "shine", "instahyre", "linkedin", "weworkremotely"]:
+                    for s in ["foundit", "timesjobs", "glassdoor", "hirist", "wellfound", "indeed", "naukri", "cutshort", "shine", "instahyre", "linkedin", "weworkremotely", "seek"]:
                         if s in old_url.lower():
                             source = s
                             break
                 if not source:
                     source = "google"
-                clean_title = _clean_role_and_title(row["title"])
+                clean_title = _clean_role_and_title(row["title"]) if source != "seek" else row["title"]
                 item_id = row["job_id"] or ""
                 c_norm = (row["company"] or "").strip().lower()
                 if source == "indeed":
@@ -1392,48 +1395,82 @@ class AppDatabase:
                     )
                     tracker_fixed += 1
 
-            # 3. Migrate chat_messages metadata_json
+            # 3. Migrate chat_messages metadata_json and content markdown links
             chat_rows = conn.execute("""
-                SELECT id, metadata_json
+                SELECT id, content, metadata_json
                 FROM chat_messages
                 WHERE metadata_json LIKE '%/job/%'
                    OR metadata_json LIKE '%foundit.com%'
                    OR metadata_json LIKE '%viewjob?jk=%'
+                   OR metadata_json LIKE '%seek.com%'
+                   OR content LIKE '%seek.com%'
             """).fetchall()
 
             for row in chat_rows:
                 meta_str = row["metadata_json"]
-                if not meta_str:
-                    continue
-                try:
-                    meta = json.loads(meta_str)
-                    jobs = meta.get("jobs")
-                    if isinstance(jobs, list):
-                        changed = False
-                        for j in jobs:
-                            if isinstance(j, dict):
-                                u = j.get("apply_url") or ""
-                                if "/job/" in u or "foundit.com" in u or "hirist.com" in u or "timesjobs.com/job" in u or "viewjob?jk=" in u:
-                                    src = j.get("source") or "web"
-                                    c_name = j.get("company", "")
-                                    j_id = j.get("source_job_id", "")
-                                    if src == "indeed":
-                                        j_id = ""
-                                    new_u = build_direct_job_url(
-                                        source=src,
-                                        company=c_name,
-                                        title=j.get("title", ""),
-                                        location=j.get("location", ""),
-                                        item_id=j_id,
-                                    )
-                                    if new_u and new_u != u:
-                                        j["apply_url"] = new_u
-                                        changed = True
-                        if changed:
-                            conn.execute("UPDATE chat_messages SET metadata_json = ? WHERE id = ?", (json.dumps(meta), row["id"]))
-                            messages_fixed += 1
-                except Exception:
-                    pass
+                content_str = row["content"] or ""
+                msg_changed = False
+                if meta_str:
+                    try:
+                        meta = json.loads(meta_str)
+                        jobs = meta.get("jobs")
+                        if isinstance(jobs, list):
+                            for j in jobs:
+                                if isinstance(j, dict):
+                                    u = j.get("apply_url") or ""
+                                    src = (j.get("source") or "web").lower()
+                                    if (
+                                        "/job/" in u
+                                        or "foundit.com" in u
+                                        or "hirist.com" in u
+                                        or "timesjobs.com/job" in u
+                                        or "viewjob?jk=" in u
+                                        or src == "seek"
+                                        or "seek.com" in u
+                                    ):
+                                        c_name = j.get("company", "")
+                                        j_id = j.get("source_job_id", "")
+                                        if src == "indeed":
+                                            j_id = ""
+                                        new_u = build_direct_job_url(
+                                            source=src,
+                                            company=c_name,
+                                            title=j.get("title", ""),
+                                            location=j.get("location", ""),
+                                            item_id=j_id,
+                                        )
+                                        if new_u and new_u != u:
+                                            j["apply_url"] = new_u
+                                            msg_changed = True
+                            if msg_changed:
+                                meta_str = json.dumps(meta)
+                    except Exception:
+                        pass
+
+                # Also upgrade any seek links in markdown tables within chat content
+                if "seek.com" in content_str:
+                    from adapters.seek import build_seek_direct_url
+                    def _replace_seek_table_row(match):
+                        full_row = match.group(0)
+                        title_m = re.search(r"\*\*(.+?)\*\*", full_row)
+                        parts = [p.strip() for p in full_row.split("|")]
+                        if len(parts) >= 8 and "seek" in parts[5].lower():
+                            t = title_m.group(1) if title_m else parts[2].replace("**", "")
+                            c = parts[3]
+                            jid = parts[4].replace("`", "").replace("SEK-", "")
+                            loc = parts[6]
+                            new_link = build_seek_direct_url(c, t, loc, jid)
+                            return re.sub(r"\[Direct Apply\]\([^)]+\)", f"[Direct Apply]({new_link})", full_row)
+                        return full_row
+
+                    new_content = re.sub(r"^\|.+seek\.com.+?\|$", _replace_seek_table_row, content_str, flags=re.MULTILINE | re.IGNORECASE)
+                    if new_content != content_str:
+                        content_str = new_content
+                        msg_changed = True
+
+                if msg_changed:
+                    conn.execute("UPDATE chat_messages SET metadata_json = ?, content = ? WHERE id = ?", (meta_str, content_str, row["id"]))
+                    messages_fixed += 1
 
             conn.commit()
 

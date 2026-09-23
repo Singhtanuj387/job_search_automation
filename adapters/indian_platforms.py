@@ -461,10 +461,8 @@ def build_direct_job_url(
         return f"https://weworkremotely.com/remote-jobs/search?term={quote_plus(clean_title)}"
 
     elif src == "seek":
-        clean_city = str(city or "").replace(" NSW", "").replace(" VIC", "").replace(" QLD", "").replace(" WA", "").replace(" SA", "").replace(" ACT", "").replace(" NZ", "").strip()
-        loc_param = f"&where={quote_plus(clean_city)}" if clean_city and clean_city.lower() not in ["any", "remote"] else ""
-        seek_query = f"{clean_comp} {clean_title}".strip() if clean_comp else clean_title
-        return f"https://www.seek.com.au/jobs?keywords={quote_plus(seek_query)}{loc_param}"
+        from adapters.seek import build_seek_direct_url
+        return build_seek_direct_url(comp or company, title, location or city, item_id)
 
     return f"https://www.google.com/search?q={quote_plus(search_query + ' jobs ' + city)}"
 

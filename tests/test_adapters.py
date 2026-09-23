@@ -150,7 +150,9 @@ def test_seek_parsing():
     assert job.company == "Atlassian"
     assert job.location == "Sydney NSW"
     assert job.seniority == "senior"
-    assert "https://www.seek.com.au/job/78401928" in job.apply_url
+    assert "https://au.seek.com/Atlassian-Senior-Cloud-Engineer-+-Cloud-Platforms-jobs/in-All-Sydney-NSW" in job.apply_url
+    assert "jobId=" in job.apply_url
+    assert "type=promoted" in job.apply_url
     assert job.confidence >= 0.9
 
 
@@ -166,7 +168,9 @@ def test_seek_fetch_and_parse():
     job = parsed[0]
     assert job.source == "seek"
     assert job.source_job_id.startswith("SEK-")
-    assert "seek.com.au" in job.apply_url
+    assert "https://au.seek.com/" in job.apply_url
+    assert "jobId=" in job.apply_url
+    assert "type=promoted" in job.apply_url
     assert job.company
 
 
