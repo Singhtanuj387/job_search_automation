@@ -297,10 +297,12 @@ def execute_message_logic(
         else:
             seniority = "any"
 
+        sources = intent_data.get("sources") or []
         query = QueryConfig(
             role=role,
             location=location,
             seniority=seniority,
+            sources=sources,
         )
 
         collected_sources: List[Dict[str, Any]] = []

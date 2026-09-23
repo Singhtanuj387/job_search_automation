@@ -218,14 +218,50 @@ class LLMService:
 
         # 6. Search Intent (Slash command or natural language job search triggers)
         search_triggers = [
-            "find jobs", "search jobs", "search for", "look for jobs", "show me jobs",
-            "job openings", "job positions", "open roles", "hiring", "job vacancies"
+            "find jobs", "search jobs", "search for", "search on", "look for jobs",
+            "look on", "find on", "jobs on", "show me jobs", "job openings",
+            "job positions", "open roles", "hiring", "job vacancies"
         ]
         has_role_job_pair = bool(re.search(r"(?:developer|engineer|designer|manager|analyst|architect)\s+(?:jobs|openings|roles|positions)", msg_lower))
-        if is_slash_search or is_explicit_job_search or any(t in msg_lower for t in search_triggers) or has_role_job_pair:
+
+        # Check for platform-specific search targeting (e.g. seek, seek.com, linkedin, etc.)
+        platform_aliases = {
+            "seek": ["seek.com.au", "seek.co.nz", "seek.com", "seek"],
+            "linkedin": ["in.linkedin.com", "linkedin.com", "linkedin"],
+            "indeed": ["in.indeed.com", "indeed.com", "indeed"],
+            "naukri": ["naukri.com", "naukri"],
+            "instahyre": ["instahyre.com", "instahyre"],
+            "cutshort": ["cutshort.io", "cutshort"],
+            "hirist": ["hirist.tech", "hirist"],
+            "glassdoor": ["glassdoor.co.in", "glassdoor.com", "glassdoor"],
+            "wellfound": ["wellfound.com", "wellfound", "angellist"],
+            "weworkremotely": ["weworkremotely.com", "weworkremotely", "wwr"],
+            "greenhouse": ["greenhouse.io", "greenhouse"],
+            "lever": ["lever.co", "lever"],
+            "arbeitnow": ["arbeitnow.com", "arbeitnow"],
+            "jobicy": ["jobicy.com", "jobicy"],
+            "remotive": ["remotive.com", "remotive"],
+            "shine": ["shine.com", "shine"],
+            "timesjobs": ["timesjobs.com", "timesjobs"],
+            "foundit": ["foundit.in", "foundit"],
+        }
+        target_source = None
+        clean_msg = msg_lower
+        for src_name, aliases in platform_aliases.items():
+            if any(re.search(r"\b" + re.escape(a) + r"\b", msg_lower) for a in aliases):
+                target_source = src_name
+                for a in aliases:
+                    clean_msg = re.sub(r"\b(?:on|at|via|from|in)\s+" + re.escape(a) + r"\b", "", clean_msg)
+                    clean_msg = re.sub(r"\b" + re.escape(a) + r"\b", "", clean_msg)
+                clean_msg = re.sub(r"\s+", " ", clean_msg).strip()
+                break
+
+        if is_slash_search or is_explicit_job_search or target_source or any(t in msg_lower for t in search_triggers) or has_role_job_pair:
             # Extract location
             loc = None
             for city in [
+                "sydney", "melbourne", "brisbane", "perth", "adelaide", "canberra",
+                "auckland", "wellington", "christchurch", "australia", "new zealand",
                 "bangalore", "bengaluru", "hyderabad", "pune", "mumbai", "delhi", "delhi-ncr",
                 "gurgaon", "noida", "chennai", "remote", "london", "berlin", "san francisco", "abroad"
             ]:
@@ -234,6 +270,16 @@ class LLMService:
                         loc = "Bangalore"
                     elif city in ["delhi", "delhi-ncr", "gurgaon", "noida"]:
                         loc = "Delhi-NCR"
+                    elif city in ["sydney"]:
+                        loc = "Sydney"
+                    elif city in ["melbourne"]:
+                        loc = "Melbourne"
+                    elif city in ["brisbane"]:
+                        loc = "Brisbane"
+                    elif city in ["perth"]:
+                        loc = "Perth"
+                    elif city in ["auckland"]:
+                        loc = "Auckland"
                     else:
                         loc = city.capitalize()
                     break
@@ -247,34 +293,40 @@ class LLMService:
             elif any(w in msg_lower for w in ["mid", "2-5"]):
                 sen = "mid"
 
-            # Extract role keywords
+            # Extract role keywords from clean_msg
             role = None
             role_patterns = [
-                r"/job-skill\s+search\s+(.*)",
-                r"/search\s+(.*)",
+                r"/job-skill\s+search\s*(.*)",
+                r"/search\s*(.*)",
                 r"find (?:me )?(.*?)(?: jobs| openings| positions| in | at | for |$)",
-                r"(?:look for |search for )(.*?)(?: jobs| openings| in | at | for |$)",
-                r"(react developer|python developer|frontend engineer|backend engineer|full stack developer|software engineer|data engineer|ml engineer|product manager|devops engineer)",
+                r"(?:look for |search for |search on |find on )(.*?)(?: jobs| openings| in | at | for |$)",
+                r"(react developer|python developer|frontend engineer|backend engineer|full stack developer|software engineer|data engineer|data scientist|ml engineer|product manager|devops engineer)",
             ]
             for pat in role_patterns:
-                match = re.search(pat, msg_lower, re.IGNORECASE)
+                match = re.search(pat, clean_msg, re.IGNORECASE)
                 if match:
-                    extracted = match.group(1).strip()
-                    if extracted and len(extracted) > 2 and extracted not in ["me", "for", "in", "jobs"]:
+                    extracted = match.group(1).strip() if match.groups() else match.group(0).strip()
+                    if extracted and len(extracted) > 2 and extracted not in ["me", "for", "in", "jobs", "on", "seek"]:
                         # strip trailing location words if captured
-                        extracted = re.sub(r"\s+(?:in|at|near)\s+.*$", "", extracted, flags=re.IGNORECASE)
-                        role = extracted.title()
-                        break
+                        extracted = re.sub(r"\s+(?:in|at|near)\s+.*$", "", extracted, flags=re.IGNORECASE).strip()
+                        if extracted and extracted not in ["me", "for", "in", "jobs", "on"]:
+                            role = extracted.title()
+                            break
 
             profile_role = stored_profile.get("role") if stored_profile else None
             profile_loc = stored_profile.get("location") if stored_profile else None
             profile_sen = stored_profile.get("seniority") if stored_profile else None
+
+            # If location wasn't specified and target source is seek, default to Sydney or profile loc
+            if not loc and target_source == "seek":
+                loc = profile_loc if (profile_loc and profile_loc.lower() not in ["india", "bangalore"]) else "Sydney"
 
             return {
                 "intent": "search",
                 "role": role or profile_role or "Software Engineer",
                 "location": loc or profile_loc or "any",
                 "seniority": sen if sen != "any" else (profile_sen or "any"),
+                "sources": [target_source] if target_source else [],
                 "raw_query": user_message,
             }
 

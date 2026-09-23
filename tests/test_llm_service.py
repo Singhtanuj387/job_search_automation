@@ -23,6 +23,23 @@ def test_classify_intent():
     assert r4["intent"] == "apply_to_url"
     assert "canonical" in (r4.get("url") or "")
 
+    # Seek platform search intent
+    r5 = LLMService.classify_intent("find jobs on seek.com", stored_profile={"role": "React Developer"})
+    assert r5["intent"] == "search"
+    assert r5.get("sources") == ["seek"]
+    assert "React" in r5["role"]
+
+    r6 = LLMService.classify_intent("/job-skill search seek", stored_profile={"role": "Data Scientist"})
+    assert r6["intent"] == "search"
+    assert r6.get("sources") == ["seek"]
+    assert "Data Scientist" in r6["role"]
+
+    r7 = LLMService.classify_intent("find python jobs on seek.com.au")
+    assert r7["intent"] == "search"
+    assert r7.get("sources") == ["seek"]
+    assert "Python" in r7["role"]
+
+
 
 def test_tailor_job_qualitative_framing():
     job = NormalizedJob(

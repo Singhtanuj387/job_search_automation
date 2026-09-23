@@ -169,3 +169,26 @@ def test_seek_fetch_and_parse():
     assert "seek.com.au" in job.apply_url
     assert job.company
 
+
+def test_seek_seniority_levels_and_orchestrator():
+    from adapters.seek import SeekAdapter
+    from core.models import QueryConfig
+    from core.orchestrator import Orchestrator
+
+    adapter = SeekAdapter()
+    orch = Orchestrator()
+
+    for sen in ["entry", "mid", "senior", "lead", "any"]:
+        query = QueryConfig(role="Data Scientist", location="Sydney", seniority=sen, sources=["seek"])
+        raw_list = adapter.fetch(query)
+        assert len(raw_list) > 0
+
+        matched_count = 0
+        for r in raw_list:
+            jobs = adapter.parse(r)
+            for j in jobs:
+                if orch._matches_query(j, query):
+                    matched_count += 1
+        assert matched_count > 0, f"Expected matches for seniority={sen}, got 0"
+
+
