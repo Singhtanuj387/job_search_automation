@@ -22,8 +22,9 @@ const PLATFORM_COLORS = {
   indeed: { color: '#4f46e5', bg: 'rgba(79, 70, 229, 0.15)', name: 'Indeed' },
   wellfound: { color: '#ea580c', bg: 'rgba(234, 88, 12, 0.15)', name: 'Wellfound' },
   glassdoor: { color: '#16a34a', bg: 'rgba(22, 163, 74, 0.15)', name: 'Glassdoor' },
-  timesjobs: { color: '#e11d48', bg: 'rgba(225, 29, 72, 0.15)', name: 'TimesJobs' },
+  timesjobs: { color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)', name: 'TimesJobs' },
   hirist: { color: '#0891b2', bg: 'rgba(8, 145, 178, 0.15)', name: 'Hirist' },
+  seek: { color: '#e60278', bg: 'rgba(230, 2, 120, 0.15)', name: 'SEEK' },
 };
 
 export default function TrackerView() {

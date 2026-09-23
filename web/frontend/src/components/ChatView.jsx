@@ -25,7 +25,7 @@ import JobResultsTable from './JobResultsTable';
 import LiveWebSearch from './LiveWebSearch';
 import LiveApplyProgress from './LiveApplyProgress';
 
-const ALL_18_SEARCH_PLATFORMS = [
+const ALL_SEARCH_PLATFORMS = [
   { source: 'linkedin', domain: 'linkedin.com/jobs' },
   { source: 'naukri', domain: 'naukri.com' },
   { source: 'instahyre', domain: 'instahyre.com' },
@@ -43,6 +43,7 @@ const ALL_18_SEARCH_PLATFORMS = [
   { source: 'arbeitnow', domain: 'arbeitnow.com' },
   { source: 'jobicy', domain: 'jobicy.com' },
   { source: 'remotive', domain: 'remotive.com' },
+  { source: 'seek', domain: 'seek.com.au' },
   { source: 'career_jsonld', domain: 'careers.company.com' },
 ];
 
@@ -174,7 +175,7 @@ export default function ChatView({
 
       const defaultRole = profile?.role || 'Software Engineer';
       const defaultLoc = profile?.location && profile.location !== 'any' ? profile.location : 'Bangalore';
-      const initialSources = ALL_18_SEARCH_PLATFORMS.map((p, idx) => ({
+      const initialSources = ALL_SEARCH_PLATFORMS.map((p, idx) => ({
         source: p.source,
         domain: p.domain,
         site_query: `site:${p.domain} "${defaultRole}" ${defaultLoc}`.trim(),
@@ -189,7 +190,7 @@ export default function ChatView({
         tailoringMessage: null,
         sources: initialSources,
         eventsLog: [
-          { time: `[${nowTime}]`, badge: 'SPIDER', text: `Queueing 18 verified platforms for "${defaultRole}" in ${defaultLoc}...`, type: 'info' }
+          { time: `[${nowTime}]`, badge: 'SPIDER', text: `Queueing ${ALL_SEARCH_PLATFORMS.length} verified platforms for "${defaultRole}" in ${defaultLoc}...`, type: 'info' }
         ],
       });
     } else {
@@ -205,7 +206,7 @@ export default function ChatView({
           if (evt.intent === 'search') {
             const defaultRole = evt.intent_data?.role || profile?.role || 'Software Engineer';
             const defaultLoc = evt.intent_data?.location || profile?.location || 'Bangalore';
-            const initialSources = ALL_18_SEARCH_PLATFORMS.map((p, idx) => ({
+            const initialSources = ALL_SEARCH_PLATFORMS.map((p, idx) => ({
               source: p.source,
               domain: p.domain,
               site_query: `site:${p.domain} "${defaultRole}" ${defaultLoc}`.trim(),
@@ -219,7 +220,7 @@ export default function ChatView({
               tailoringMessage: null,
               sources: initialSources,
               eventsLog: [
-                { time: timeTag, badge: 'SPIDER', text: `Queueing 18 verified platforms for "${defaultRole}" in ${defaultLoc}...`, type: 'info' }
+                { time: timeTag, badge: 'SPIDER', text: `Queueing ${ALL_SEARCH_PLATFORMS.length} verified platforms for "${defaultRole}" in ${defaultLoc}...`, type: 'info' }
               ],
             });
           } else {

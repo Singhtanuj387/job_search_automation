@@ -37,6 +37,7 @@ const PLATFORM_META = {
   arbeitnow: { name: 'Arbeitnow', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)', tag: 'ARB', cat: 'Remote & Global' },
   jobicy: { name: 'Jobicy', color: '#d946ef', bg: 'rgba(217, 70, 239, 0.15)', tag: 'JBC', cat: 'Remote & Global' },
   remotive: { name: 'Remotive', color: '#eab308', bg: 'rgba(234, 179, 8, 0.15)', tag: 'REM', cat: 'Remote & Global' },
+  seek: { name: 'SEEK', color: '#e60278', bg: 'rgba(230, 2, 120, 0.15)', tag: 'SEK', cat: 'Remote & Global' },
   career_jsonld: { name: 'Direct Career Pages', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)', tag: 'DIR', cat: 'Direct ATS' },
 };
 
@@ -130,8 +131,8 @@ export default function LiveWebSearch({
           <div className="header-titles">
             <span className="header-title">
               {active
-                ? `Scanning 18 Verified Platforms Live (${completedSources}/${sources.length} scanned • ${progressPercent}%)`
-                : `Verified 18 Platforms • ${totalResults} Total Job Opportunities Discovered`}
+                ? `Scanning ${sources.length || 19} Verified Platforms Live (${completedSources}/${sources.length} scanned • ${progressPercent}%)`
+                : `Verified ${sources.length || 19} Platforms • ${totalResults} Total Job Opportunities Discovered`}
             </span>
             <span className="header-subtitle">
               Simultaneous concurrent spidering across verified ATS APIs, job portals & public boards
@@ -225,12 +226,12 @@ export default function LiveWebSearch({
                   <span className="term-dot green" />
                 </div>
                 <span className="term-title">Engine Execution Stream • spider-worker</span>
-                <span className="term-sub">18 concurrent streams</span>
+                <span className="term-sub">{sources.length || 19} concurrent streams</span>
               </div>
               <div className="terminal-log-content">
                 {eventsLog.length === 0 ? (
                   <div className="terminal-log-line muted">
-                    [0.00s] Initialized 18-platform spider queue. Rate limiter calibrated to respectful jitter (0.5s-1.5s)...
+                    [0.00s] Initialized {sources.length || 19}-platform spider queue. Rate limiter calibrated to respectful jitter (0.5s-1.5s)...
                   </div>
                 ) : (
                   eventsLog.map((log, idx) => (
@@ -429,7 +430,7 @@ export default function LiveWebSearch({
               <div className="tailor-stages-stepper">
                 <div className="stage-step completed">
                   <div className="step-icon"><CheckCheck size={12} /></div>
-                  <span className="step-label">Spider 18 Sites</span>
+                  <span className="step-label">Spider {sources.length || 19} Sites</span>
                 </div>
                 <div className="step-connector completed" />
                 <div className="stage-step completed">

@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from adapters import ALL_ADAPTERS
 from core.models import NormalizedJob, QueryConfig
 from core.orchestrator import Orchestrator
 from core.storage import RunStorage
@@ -55,7 +56,7 @@ class EngineBridge:
             try:
                 progress_callback({
                     "type": "tailoring",
-                    "message": f"Discovered {len(jobs)} total jobs across 18 verified platforms. Scoring ATS fitness and generating custom application documents...",
+                    "message": f"Discovered {len(jobs)} total jobs across {len(ALL_ADAPTERS)} verified platforms. Scoring ATS fitness and generating custom application documents...",
                     "total_found": len(jobs),
                 })
             except Exception:

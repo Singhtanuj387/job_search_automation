@@ -39,6 +39,7 @@ ADAPTER_DOMAINS: Dict[str, str] = {
     "arbeitnow": "arbeitnow.com",
     "jobicy": "jobicy.com",
     "remotive": "remotive.com",
+    "seek": "seek.com.au",
     "career_jsonld": "careers.company.com",
 }
 

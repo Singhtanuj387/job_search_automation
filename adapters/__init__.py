@@ -8,6 +8,7 @@ from adapters.career_page_jsonld import CareerPageJsonLdAdapter
 from adapters.greenhouse import GreenhouseAdapter
 from adapters.jobicy import JobicyAdapter
 from adapters.lever import LeverAdapter
+from adapters.seek import SeekAdapter
 from adapters.remotive import RemotiveAdapter
 from adapters.indian_platforms import (
     NaukriAdapter,
@@ -45,5 +46,6 @@ ALL_ADAPTERS = {
     "arbeitnow": ArbeitnowAdapter,
     "jobicy": JobicyAdapter,
     "remotive": RemotiveAdapter,
+    "seek": SeekAdapter,
     "career_jsonld": CareerPageJsonLdAdapter,
 }

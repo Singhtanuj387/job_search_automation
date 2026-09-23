@@ -121,3 +121,51 @@ def test_jobicy_parsing():
     assert job.company == "Tech Corp"
     assert job.salary_range == "$120,000 - $150,000"
     assert job.seniority == "lead"
+
+
+def test_seek_parsing():
+    from adapters.seek import SeekAdapter
+    adapter = SeekAdapter()
+    raw = RawResult(
+        source="seek",
+        source_job_id="SEK-78401928",
+        fetch_method="api",
+        payload={
+            "id": "78401928",
+            "title": "Senior Cloud Engineer - Cloud Platforms",
+            "company": "Atlassian",
+            "location": "Sydney NSW",
+            "salary": "$170,000 - $200,000 + Equity",
+            "description": "Lead scalable cloud distributed systems. Verified via SEEK.",
+            "apply_url": "https://www.seek.com.au/job/78401928",
+        },
+        url="https://www.seek.com.au/job/78401928",
+    )
+    jobs = adapter.parse(raw)
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.source == "seek"
+    assert job.source_job_id == "SEK-78401928"
+    assert job.title == "Senior Cloud Engineer - Cloud Platforms"
+    assert job.company == "Atlassian"
+    assert job.location == "Sydney NSW"
+    assert job.seniority == "senior"
+    assert "https://www.seek.com.au/job/78401928" in job.apply_url
+    assert job.confidence >= 0.9
+
+
+def test_seek_fetch_and_parse():
+    from adapters.seek import SeekAdapter
+    from core.models import QueryConfig
+    adapter = SeekAdapter()
+    query = QueryConfig(role="Data Scientist", location="Sydney")
+    raw_list = adapter.fetch(query)
+    assert len(raw_list) > 0
+    parsed = adapter.parse(raw_list[0])
+    assert len(parsed) == 1
+    job = parsed[0]
+    assert job.source == "seek"
+    assert job.source_job_id.startswith("SEK-")
+    assert "seek.com.au" in job.apply_url
+    assert job.company
+

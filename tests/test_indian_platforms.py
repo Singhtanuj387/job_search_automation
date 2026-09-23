@@ -24,11 +24,11 @@ def test_all_18_adapters_registered():
         "naukri", "linkedin", "instahyre", "cutshort", "hirist",
         "indeed", "foundit", "shine", "timesjobs", "glassdoor",
         "wellfound", "weworkremotely", "greenhouse", "lever",
-        "arbeitnow", "jobicy", "remotive", "career_jsonld"
+        "arbeitnow", "jobicy", "remotive", "seek", "career_jsonld"
     ]
     for src in expected_sources:
         assert src in ALL_ADAPTERS, f"Adapter {src} not found in ALL_ADAPTERS"
-    assert len(ALL_ADAPTERS) >= 18
+    assert len(ALL_ADAPTERS) >= 19
 
 
 def test_indian_adapters_fetch_and_parse():

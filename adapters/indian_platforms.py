@@ -460,6 +460,14 @@ def build_direct_job_url(
     elif src == "weworkremotely":
         return f"https://weworkremotely.com/remote-jobs/search?term={quote_plus(clean_title)}"
 
+    elif src == "seek":
+        clean_id = str(item_id or "").replace("SEK-", "").replace("SEEK-", "").strip()
+        if clean_id.isdigit():
+            return f"https://www.seek.com.au/job/{clean_id}"
+        loc_param = f"&where={quote_plus(city)}" if city and city.lower() != "remote" else ""
+        seek_query = f"{clean_title} {clean_comp}".strip() if clean_comp else clean_title
+        return f"https://www.seek.com.au/jobs?keywords={quote_plus(seek_query)}{loc_param}"
+
     return f"https://www.google.com/search?q={quote_plus(search_query + ' jobs ' + city)}"
 
 

@@ -42,6 +42,7 @@ const PLATFORM_META = {
   arbeitnow: { name: 'Arbeitnow', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)', tag: 'ARB' },
   jobicy: { name: 'Jobicy', color: '#d946ef', bg: 'rgba(217, 70, 239, 0.15)', tag: 'JBC' },
   remotive: { name: 'Remotive', color: '#eab308', bg: 'rgba(234, 179, 8, 0.15)', tag: 'REM' },
+  seek: { name: 'SEEK', color: '#e60278', bg: 'rgba(230, 2, 120, 0.15)', tag: 'SEK' },
   career_jsonld: { name: 'Direct Career Pages', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)', tag: 'DIR' },
 };
 
