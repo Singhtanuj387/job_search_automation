@@ -173,7 +173,7 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
     try {
       await deleteSecret();
       setSuccessMsg("AI credentials deleted.");
-      await loadSecretInfo();
+      await loadSecret();
     } catch (err) {
       setError(err.message || "Failed to delete API key.");
     } finally {
@@ -188,12 +188,12 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
     setLiLoading(true);
 
     try {
-      if (!linkedinEmail || !linkedinPassword) {
+      if (!liEmail?.trim() || !liPassword?.trim()) {
         throw new Error("Email and password are required.");
       }
-      await saveApplyCredentials(linkedinEmail, linkedinPassword);
+      await saveApplyCredentials(liEmail.trim(), liPassword.trim());
       setLiSuccess("LinkedIn credentials encrypted and saved successfully.");
-      setLinkedinPassword("");
+      setLiPassword("");
       setIsEditingLi(false);
       await loadPlatformCredentials();
     } catch (err) {
