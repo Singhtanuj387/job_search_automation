@@ -384,6 +384,85 @@ export async function startIndeedApply(maxApplies = 25, onProgressEvent) {
   return finalResult;
 }
 
+export async function getSeekCredentials() {
+  const res = await sessionFetch(`${API_BASE}/apply/seek/credentials`);
+  return res.json();
+}
+
+export async function saveSeekCredentials(email, password = "") {
+  const res = await sessionFetch(`${API_BASE}/apply/seek/credentials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: password || "" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to save SEEK credentials" }));
+    throw new Error(err.detail || "Failed to save SEEK credentials");
+  }
+  return res.json();
+}
+
+export async function deleteSeekCredentials() {
+  const res = await sessionFetch(`${API_BASE}/apply/seek/credentials`, {
+    method: "DELETE",
+  });
+  return res.json();
+}
+
+export async function clearSeekCookies() {
+  const res = await sessionFetch(`${API_BASE}/apply/seek/credentials/cookies`, {
+    method: "DELETE",
+  });
+  return res.json();
+}
+
+export async function startSeekApply(maxApplies = 25, onProgressEvent) {
+  const res = await sessionFetch(`${API_BASE}/apply/seek/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_applies: maxApplies, platform: "seek" }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to start SEEK apply session" }));
+    throw new Error(err.detail || "Failed to start SEEK apply session");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const dataStr = trimmed.slice(5).trim();
+      if (dataStr === "[DONE]") continue;
+
+      try {
+        const evt = JSON.parse(dataStr);
+        if (evt.type === "apply_complete") {
+          finalResult = evt;
+        }
+        if (onProgressEvent) {
+          onProgressEvent(evt);
+        }
+      } catch (e) {
+        console.error("Error parsing SEEK apply stream chunk:", e);
+      }
+    }
+  }
+
+  return finalResult;
+}
+
 export async function startLinkedInApply(maxApplies = 25, onProgressEvent) {
   const res = await sessionFetch(`${API_BASE}/apply/linkedin/start`, {
     method: "POST",

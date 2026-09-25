@@ -38,8 +38,9 @@ function LiveApplyProgressInner({
   const logEndRef = useRef(null);
 
   const safeEvents = Array.isArray(events) ? events : [];
-  const isIndeed = platform === 'indeed' || (typeof sessionId === 'string' && sessionId.includes('indeed')) || safeEvents.some(e => e?.platform === 'indeed');
-  const platformName = isIndeed ? 'Indeed' : 'LinkedIn';
+  const isSeek = platform === 'seek' || (typeof sessionId === 'string' && sessionId.includes('seek')) || safeEvents.some(e => e?.platform === 'seek');
+  const isIndeed = !isSeek && (platform === 'indeed' || (typeof sessionId === 'string' && sessionId.includes('indeed')) || safeEvents.some(e => e?.platform === 'indeed'));
+  const platformName = isSeek ? 'SEEK' : (isIndeed ? 'Indeed' : 'LinkedIn');
 
   // Auto-scroll to latest event
   useEffect(() => {
@@ -162,7 +163,11 @@ function LiveApplyProgressInner({
                     ? `${platformName} Auto-Apply — Paused`
                     : `${platformName} Auto-Apply Agent`}
             </span>
-            {isIndeed ? (
+            {isSeek ? (
+              <span style={{ marginLeft: '0.4rem', fontSize: '0.72rem', fontWeight: 800, color: '#fff', background: '#e60278', padding: '0.1rem 0.4rem', borderRadius: '4px', letterSpacing: '0.5px' }}>
+                SEEK
+              </span>
+            ) : isIndeed ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="#2164f4" style={{ marginLeft: '0.3rem' }}>
                 <path d="M12.5 3a2.5 2.5 0 0 0-2.5 2.5v13a2.5 2.5 0 0 0 5 0v-13A2.5 2.5 0 0 0 12.5 3zM6 8a2 2 0 0 0-2 2v8a2 2 0 0 0 4 0v-8a2 2 0 0 0-2-2zm12 3a2 2 0 0 0-2 2v5a2 2 0 0 0 4 0v-5a2 2 0 0 0-2-2z"/>
               </svg>

@@ -19,7 +19,7 @@ import {
   ShieldCheck,
   Key,
 } from 'lucide-react';
-import { sendMessage, sendMessageStream, addToTracker, startLinkedInApply, startIndeedApply, getActiveApplySession, reconnectApplySession, respondToApplyQuestion } from '../api';
+import { sendMessage, sendMessageStream, addToTracker, startLinkedInApply, startIndeedApply, startSeekApply, getActiveApplySession, reconnectApplySession, respondToApplyQuestion } from '../api';
 import FormattedMessage from './FormattedMessage';
 import JobResultsTable from './JobResultsTable';
 import LiveWebSearch from './LiveWebSearch';
@@ -147,7 +147,8 @@ export default function ChatView({
                                lowerText.startsWith("/job-skill help") ||
                                lowerText.startsWith("/job-skill automate") ||
                                lowerText.startsWith("/linkedin-login") ||
-                               lowerText.startsWith("/indeed-login");
+                               lowerText.startsWith("/indeed-login") ||
+                               lowerText.startsWith("/seek-login");
 
     // If an apply session is actively waiting for input (e.g. Indeed OTP code or screening answer), route to apply agent directly
     const pendingInputEvent = liveApplyState.active && liveApplyState.sessionId &&
@@ -298,8 +299,11 @@ export default function ChatView({
         // If the assistant message indicates apply_ready, auto-start the apply session
         if (assistantMsg.metadata?.apply_ready) {
           const isIndeed = assistantMsg.metadata?.platform === 'indeed';
-          const platformLabel = isIndeed ? 'Indeed' : 'LinkedIn';
-          const previewJobs = isIndeed
+          const isSeek = assistantMsg.metadata?.platform === 'seek';
+          const platformLabel = isSeek ? 'SEEK' : (isIndeed ? 'Indeed' : 'LinkedIn');
+          const previewJobs = isSeek
+            ? (assistantMsg.metadata.seek_jobs_preview || [])
+            : isIndeed
             ? (assistantMsg.metadata.indeed_jobs_preview || [])
             : (assistantMsg.metadata.linkedin_jobs_preview || []);
 
@@ -309,10 +313,10 @@ export default function ChatView({
             events: [],
             status: 'running',
             initialJobs: previewJobs,
-            platform: isIndeed ? 'indeed' : 'linkedin',
+            platform: isSeek ? 'seek' : (isIndeed ? 'indeed' : 'linkedin'),
           });
           try {
-            const startFn = isIndeed ? startIndeedApply : startLinkedInApply;
+            const startFn = isSeek ? startSeekApply : (isIndeed ? startIndeedApply : startLinkedInApply);
             const applyResult = await startFn(25, (evt) => {
               setLiveApplyState((prev) => ({
                 ...prev,
@@ -330,7 +334,7 @@ export default function ChatView({
                   `**Applied:** ${r.applied || 0} | **Skipped:** ${r.skipped || 0} | **Errors:** ${r.errors || 0}\n\n` +
                   `All applied jobs have been added to your **Application Tracker**.`,
                 created_at: new Date().toISOString(),
-                metadata: { type: 'apply_complete', platform: isIndeed ? 'indeed' : 'linkedin', ...r },
+                metadata: { type: 'apply_complete', platform: isSeek ? 'seek' : (isIndeed ? 'indeed' : 'linkedin'), ...r },
               });
             }
           } catch (applyErr) {
@@ -377,6 +381,7 @@ export default function ChatView({
     { cmd: "/job-skill search", label: "🔍 /job-skill search" },
     { cmd: "/job-skill apply linkedin", label: "🤖 /job-skill apply linkedin" },
     { cmd: "/job-skill apply indeed", label: "🤖 /job-skill apply indeed" },
+    { cmd: "/job-skill apply seek", label: "🤖 /job-skill apply seek" },
     { action: "credentials", label: "🔐 Platform Credentials Vault" },
     { cmd: "/job-skill status", label: "📊 /job-skill status" },
     { cmd: "/job-skill automate", label: "⏰ /job-skill automate" },
@@ -461,11 +466,11 @@ export default function ChatView({
                       platform={liveApplyState.platform || msg.metadata?.platform}
                       events={liveApplyState.events}
                       initialStatus={liveApplyState.status || (liveApplyState.active ? 'running' : 'stopped')}
-                      initialJobs={msg.metadata.indeed_jobs_preview || msg.metadata.linkedin_jobs_preview || liveApplyState.initialJobs || []}
+                      initialJobs={msg.metadata.seek_jobs_preview || msg.metadata.indeed_jobs_preview || msg.metadata.linkedin_jobs_preview || liveApplyState.initialJobs || []}
                       initialPendingQuestion={liveApplyState.pendingQuestion}
                       collapsible={true}
                       defaultExpanded={true}
-                      onResumeSession={() => handleSend(msg.metadata?.platform === 'indeed' ? '/job-skill apply indeed' : '/job-skill apply linkedin')}
+                      onResumeSession={() => handleSend(msg.metadata?.platform === 'seek' ? '/job-skill apply seek' : (msg.metadata?.platform === 'indeed' ? '/job-skill apply indeed' : '/job-skill apply linkedin'))}
                     />
                   </div>
                 )}

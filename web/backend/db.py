@@ -201,6 +201,14 @@ class AppDatabase:
                     saved_at TEXT NOT NULL
                 )
             """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS seek_credentials (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    encrypted_email TEXT NOT NULL,
+                    encrypted_password TEXT NOT NULL,
+                    saved_at TEXT NOT NULL
+                )
+            """)
 
             # Multi-session scoped tables for anonymous client isolation
             c.execute("""
@@ -254,6 +262,14 @@ class AppDatabase:
             """)
             c.execute("""
                 CREATE TABLE IF NOT EXISTS user_indeed_credentials (
+                    client_id TEXT PRIMARY KEY,
+                    encrypted_email TEXT NOT NULL,
+                    encrypted_password TEXT NOT NULL,
+                    saved_at TEXT NOT NULL
+                )
+            """)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS user_seek_credentials (
                     client_id TEXT PRIMARY KEY,
                     encrypted_email TEXT NOT NULL,
                     encrypted_password TEXT NOT NULL,
@@ -1604,6 +1620,68 @@ class AppDatabase:
             conn.commit()
             return cur.rowcount > 0
 
+    # ------------------ SEEK CREDENTIALS ------------------
+    def save_seek_credentials(self, email: str, password: str = "", client_id: str = "default") -> Dict[str, Any]:
+        clean_client = (client_id or "default").strip()
+        now = datetime.now(timezone.utc).isoformat()
+        enc_email = SecurityManager.encrypt(email)
+        enc_password = SecurityManager.encrypt(password or "")
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_seek_credentials (client_id, encrypted_email, encrypted_password, saved_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(client_id) DO UPDATE SET
+                    encrypted_email = excluded.encrypted_email,
+                    encrypted_password = excluded.encrypted_password,
+                    saved_at = excluded.saved_at
+                """,
+                (clean_client, enc_email, enc_password, now)
+            )
+            if clean_client == "default":
+                conn.execute(
+                    """
+                    INSERT INTO seek_credentials (id, encrypted_email, encrypted_password, saved_at)
+                    VALUES (1, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        encrypted_email = excluded.encrypted_email,
+                        encrypted_password = excluded.encrypted_password,
+                        saved_at = excluded.saved_at
+                    """,
+                    (enc_email, enc_password, now)
+                )
+            conn.commit()
+        return {
+            "saved": True,
+            "status": "saved",
+            "masked_email": SecurityManager.mask_key(email),
+            "saved_at": now,
+        }
+
+    def get_seek_credentials(self, client_id: str = "default") -> Optional[Dict[str, Any]]:
+        clean_client = (client_id or "default").strip()
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM user_seek_credentials WHERE client_id = ?", (clean_client,)).fetchone()
+            if not row and clean_client == "default":
+                row = conn.execute("SELECT * FROM seek_credentials WHERE id = 1").fetchone()
+            if not row:
+                return None
+            return {
+                "email": SecurityManager.decrypt(row["encrypted_email"]) if row["encrypted_email"] else "",
+                "password": SecurityManager.decrypt(row["encrypted_password"]) if row["encrypted_password"] else "",
+                "masked_email": SecurityManager.mask_key(SecurityManager.decrypt(row["encrypted_email"])) if row["encrypted_email"] else "",
+                "saved_at": row["saved_at"],
+            }
+
+    def delete_seek_credentials(self, client_id: str = "default") -> bool:
+        clean_client = (client_id or "default").strip()
+        with self._get_connection() as conn:
+            cur = conn.execute("DELETE FROM user_seek_credentials WHERE client_id = ?", (clean_client,))
+            if clean_client == "default":
+                conn.execute("DELETE FROM seek_credentials WHERE id = 1")
+            conn.commit()
+            return cur.rowcount > 0
+
     # ------------------ APPLY SESSIONS ------------------
     def create_apply_session(self, session_id: str, platform: str = "linkedin", max_applies: int = 25, total_jobs: int = 0, client_id: str = "default") -> Dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
@@ -1781,6 +1859,47 @@ class AppDatabase:
                     """
                     SELECT * FROM job_opportunities
                     WHERE LOWER(source) = 'indeed'
+                      AND (apply_status IS NULL OR apply_status = 'not_applied')
+                      AND apply_url != ''
+                    ORDER BY fitness_score DESC
+                    LIMIT ?
+                    """,
+                    (max_jobs,)
+                ).fetchall()
+            results = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["tailored_bullets"] = json.loads(item.get("tailored_bullets_json") or "[]")
+                except Exception:
+                    item["tailored_bullets"] = []
+                results.append(item)
+            return results
+
+    def get_seek_opportunities_for_apply(self, max_jobs: int = 25, client_id: str = "default") -> List[Dict[str, Any]]:
+        """
+        Returns SEEK jobs from opportunities that haven't been applied to yet,
+        sorted by fitness score descending, scoped to client_id.
+        """
+        clean_client = (client_id or "default").strip()
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM job_opportunities
+                WHERE LOWER(source) = 'seek'
+                  AND client_id = ?
+                  AND (apply_status IS NULL OR apply_status = 'not_applied')
+                  AND apply_url != ''
+                ORDER BY fitness_score DESC
+                LIMIT ?
+                """,
+                (clean_client, max_jobs)
+            ).fetchall()
+            if not rows and clean_client == "default":
+                rows = conn.execute(
+                    """
+                    SELECT * FROM job_opportunities
+                    WHERE LOWER(source) = 'seek'
                       AND (apply_status IS NULL OR apply_status = 'not_applied')
                       AND apply_url != ''
                     ORDER BY fitness_score DESC

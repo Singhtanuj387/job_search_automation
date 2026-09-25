@@ -167,6 +167,73 @@ def clear_indeed_cookies():
     return {"cleared": True}
 
 
+# ────────────── SEEK Credentials ──────────────
+
+class SeekCredentialsRequest(BaseModel):
+    email: str
+    password: Optional[str] = ""
+
+
+@router.post("/seek/credentials")
+def save_seek_credentials(req: SeekCredentialsRequest, client_id: str = Depends(get_client_id)):
+    """Save SEEK login credentials (encrypted). Only email is required for passwordless code sign-in."""
+    if not req.email or not req.email.strip():
+        raise HTTPException(status_code=400, detail="SEEK email is required.")
+    result = db.save_seek_credentials(req.email.strip(), (req.password or "").strip(), client_id=client_id)
+    return result
+
+
+@router.get("/seek/credentials")
+def get_seek_credentials(client_id: str = Depends(get_client_id)):
+    """Check if SEEK credentials are stored. Returns masked email, no password."""
+    import os
+    creds = db.get_seek_credentials(client_id=client_id)
+    cookie_paths = ["web/backend/data/seek_cookies.json", "data/seek_cookies.json"]
+    has_cookies = any(os.path.exists(p) and os.path.getsize(p) > 100 for p in cookie_paths)
+
+    if not creds:
+        return {
+            "has_credentials": False,
+            "has_cookies": has_cookies,
+        }
+    return {
+        "has_credentials": True,
+        "masked_email": creds.get("masked_email", ""),
+        "email": creds.get("email", ""),
+        "saved_at": creds.get("saved_at", ""),
+        "has_cookies": has_cookies,
+    }
+
+
+@router.delete("/seek/credentials")
+def delete_seek_credentials(client_id: str = Depends(get_client_id)):
+    """Remove stored SEEK credentials and cached cookies."""
+    import os
+    deleted = db.delete_seek_credentials(client_id=client_id)
+    for p in ["web/backend/data/seek_cookies.json", "data/seek_cookies.json"]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+    return {"deleted": deleted}
+
+
+@router.delete("/seek/credentials/cookies")
+def clear_seek_cookies():
+    """Clear cached SEEK browser cookies."""
+    import os
+    cleared_any = False
+    for p in ["web/backend/data/seek_cookies.json", "data/seek_cookies.json"]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+                cleared_any = True
+            except Exception as e:
+                return {"cleared": False, "error": str(e)}
+    return {"cleared": True}
+
+
 # ────────────── Apply Sessions ──────────────
 
 @router.get("/sessions")
@@ -669,10 +736,11 @@ async def respond_to_question(session_id: str, req: RespondToQuestionRequest):
     return {"status": "ok", "message": "Answer submitted to the apply agent."}
 
 
+@router.post("/seek/respond/{session_id}")
 @router.post("/indeed/respond/{session_id}")
 @router.post("/respond/{session_id}")
 async def respond_to_question_alias(session_id: str, req: RespondToQuestionRequest):
-    """Alias for responding to question across LinkedIn and Indeed."""
+    """Alias for responding to question across LinkedIn, Indeed, and SEEK."""
     return await respond_to_question(session_id, req)
 
 
@@ -711,10 +779,11 @@ async def stop_apply_session(session_id: str):
     raise HTTPException(status_code=404, detail="Apply session not found.")
 
 
+@router.post("/seek/stop/{session_id}")
 @router.post("/indeed/stop/{session_id}")
 @router.post("/stop/{session_id}")
 async def stop_apply_session_alias(session_id: str):
-    """Alias for stopping an active apply session across LinkedIn and Indeed."""
+    """Alias for stopping an active apply session across LinkedIn, Indeed, and SEEK."""
     return await stop_apply_session(session_id)
 
 
@@ -1018,14 +1087,327 @@ async def start_indeed_apply(req: StartApplyRequest, client_id: str = Depends(ge
     )
 
 
+# ────────────── SEEK Auto-Apply ──────────────
+
+@router.post("/seek/start")
+async def start_seek_apply(req: StartApplyRequest, client_id: str = Depends(get_client_id)):
+    """
+    Start a SEEK auto-apply session for Quick apply jobs.
+    Returns SSE stream with real-time progress.
+    """
+    # 1. Stop any currently running background session to prevent concurrency conflicts
+    for existing_id, sdata in list(_active_sessions.items()):
+        if sdata.get("client_id", "default") == client_id and sdata.get("status") in ("running", "waiting_for_input"):
+            agent = sdata.get("agent")
+            if agent:
+                try:
+                    agent.request_stop()
+                except Exception:
+                    pass
+            db.update_apply_session(existing_id, status="stopped")
+            sdata["status"] = "stopped"
+
+    # 2. Validate credentials exist (or fall back to profile email / cached session)
+    profile = db.get_profile(session_id=client_id) or {}
+    creds = db.get_seek_credentials(client_id=client_id)
+    if not creds:
+        p_email = (profile.get("email") or "").strip()
+        if p_email:
+            db.save_seek_credentials(p_email, "", client_id=client_id)
+            creds = db.get_seek_credentials(client_id=client_id)
+    if not creds:
+        raise HTTPException(
+            status_code=400,
+            detail="SEEK credentials not saved. Please provide your SEEK email first in Platform Credentials."
+        )
+
+    # 3. Get profile and resume data
+    resume_text = profile.get("resume_text", "")
+    if not resume_text:
+        raise HTTPException(
+            status_code=400,
+            detail="No resume uploaded. Please upload your resume first in the Candidate Profile section."
+        )
+
+    # 4. Get SEEK jobs to apply to
+    jobs = db.get_seek_opportunities_for_apply(max_jobs=req.max_applies, client_id=client_id)
+    if not jobs:
+        # Fallback: check general opportunities for any with seek in apply_url or source
+        all_opps = db.get_opportunities(limit=50, client_id=client_id)
+        jobs = [
+            o for o in all_opps
+            if "seek.com" in (o.get("apply_url") or "").lower() or (o.get("source") or "").lower() == "seek"
+        ][:req.max_applies]
+
+    if not jobs:
+        raise HTTPException(
+            status_code=404,
+            detail="No SEEK jobs available to apply to. Run a search first with /job-skill search to discover opportunities."
+        )
+
+    # 5. Extract structured resume data
+    resume_data = ResumeExtractor.extract_all(resume_text, profile)
+
+    # 6. Create apply session
+    session_id = f"apply_seek_{uuid.uuid4().hex[:8]}"
+    db.create_apply_session(
+        session_id=session_id,
+        platform="seek",
+        max_applies=req.max_applies,
+        total_jobs=len(jobs),
+        client_id=client_id,
+    )
+
+    loop = asyncio.get_running_loop()
+    question_event = asyncio.Event()
+    answer_holder: Dict[str, Optional[str]] = {"value": None}
+    event_buffer: List[Dict[str, Any]] = []
+    subscribers: List[asyncio.Queue] = []
+    main_queue: asyncio.Queue = asyncio.Queue()
+    subscribers.append(main_queue)
+
+    session_entry: Dict[str, Any] = {
+        "session_id": session_id,
+        "client_id": client_id,
+        "platform": "seek",
+        "agent": None,
+        "agent_task": None,
+        "question_event": question_event,
+        "answer_holder": answer_holder,
+        "stop_requested": False,
+        "event_buffer": event_buffer,
+        "subscribers": subscribers,
+        "status": "running",
+        "jobs": jobs,
+        "total_jobs": len(jobs),
+        "applied_count": 0,
+        "skipped_count": 0,
+        "error_count": 0,
+        "pending_question": None,
+        "loop": loop,
+    }
+
+    def broadcast(evt: Dict[str, Any]):
+        """Append event to history and push to all connected subscriber queues."""
+        event_buffer.append(evt)
+        if evt.get("type") == "apply_job_done":
+            st = evt.get("status")
+            if st == "applied":
+                session_entry["applied_count"] += 1
+            elif st in ("skipped", "manual_required"):
+                session_entry["skipped_count"] += 1
+            else:
+                session_entry["error_count"] += 1
+            db.update_apply_session(
+                session_id,
+                applied_count=session_entry["applied_count"],
+                skipped_count=session_entry["skipped_count"],
+                error_count=session_entry["error_count"],
+            )
+
+        for q in list(subscribers):
+            try:
+                q.put_nowait(evt)
+            except Exception:
+                pass
+
+    session_entry["broadcast"] = broadcast
+    _active_sessions[session_id] = session_entry
+
+    async def ask_user_fn(job_title: str, field_name: str, question: str) -> Optional[str]:
+        """
+        Called by the agent when it needs user input (e.g. 6-digit code or screening question).
+        Sets pending question in session & DB, broadcasts SSE event, and waits for response.
+        """
+        q_data = {
+            "job_title": job_title,
+            "field_name": field_name,
+            "question": question,
+        }
+        session_entry["status"] = "waiting_for_input"
+        session_entry["pending_question"] = q_data
+        db.update_apply_session(session_id, pending_question=q_data)
+
+        broadcast({
+            "type": "apply_needs_input",
+            "session_id": session_id,
+            "platform": "seek",
+            "job_title": job_title,
+            "field_name": field_name,
+            "question": question,
+            "message": f"SEEK agent needs your input for: {field_name}",
+        })
+
+        answer_holder["value"] = None
+        question_event.clear()
+
+        try:
+            await asyncio.wait_for(question_event.wait(), timeout=300)
+        except asyncio.TimeoutError:
+            session_entry["status"] = "running"
+            session_entry["pending_question"] = None
+            db.update_apply_session(session_id, pending_question=None)
+            broadcast({
+                "type": "apply_input_timeout",
+                "session_id": session_id,
+                "field_name": field_name,
+                "message": f"Input timed out for '{field_name}'. Proceeding...",
+            })
+            return None
+
+        ans = answer_holder["value"]
+        session_entry["status"] = "running"
+        session_entry["pending_question"] = None
+        db.update_apply_session(session_id, pending_question=None)
+
+        broadcast({
+            "type": "apply_input_resolved",
+            "session_id": session_id,
+            "field_name": field_name,
+            "answer": ans,
+            "message": f"Answer received for '{field_name}'. Resuming SEEK application...",
+        })
+        return ans
+
+    broadcast({
+        "type": "apply_init",
+        "session_id": session_id,
+        "platform": "seek",
+        "total_jobs": len(jobs),
+        "message": f"Initialized SEEK auto-apply session with {len(jobs)} jobs (Quick Apply only)",
+    })
+
+    async def run_agent():
+        from web.backend.seek_apply_agent import SeekApplyAgent
+
+        agent = SeekApplyAgent(
+            credentials=creds,
+            resume_data=resume_data,
+            profile=profile,
+            ask_user_callback=ask_user_fn,
+            progress_callback=broadcast,
+            db=db,
+        )
+        session_entry["agent"] = agent
+
+        try:
+            await agent.initialize_browser()
+
+            logged_in = await agent.login()
+            if not logged_in:
+                broadcast({
+                    "type": "apply_error",
+                    "session_id": session_id,
+                    "platform": "seek",
+                    "message": "Failed to log into SEEK. Check your credentials in Platform Credentials.",
+                })
+                now = datetime.now(timezone.utc).isoformat()
+                db.update_apply_session(session_id, status="error", completed_at=now)
+                session_entry["status"] = "error"
+                return None
+
+            result = await agent.run_batch(jobs, max_applies=req.max_applies)
+            return result
+
+        except Exception as e:
+            broadcast({
+                "type": "apply_error",
+                "session_id": session_id,
+                "platform": "seek",
+                "message": f"SEEK apply agent error: {str(e)}",
+            })
+            now = datetime.now(timezone.utc).isoformat()
+            db.update_apply_session(session_id, status="error", completed_at=now)
+            session_entry["status"] = "error"
+            return None
+        finally:
+            await agent.close_browser()
+
+    agent_task = asyncio.create_task(run_agent())
+    session_entry["agent_task"] = agent_task
+
+    async def finalize_session():
+        try:
+            batch_result = await agent_task
+            now = datetime.now(timezone.utc).isoformat()
+            if batch_result:
+                db.update_apply_session(
+                    session_id,
+                    status="completed",
+                    applied_count=batch_result.applied,
+                    skipped_count=batch_result.skipped,
+                    error_count=batch_result.errors,
+                    completed_at=now,
+                    results_json=json.dumps([
+                        {"job_id": r.job_id, "company": r.company, "title": r.title,
+                         "status": r.status.value, "message": r.message}
+                        for r in batch_result.results
+                    ]),
+                )
+                session_entry["status"] = "completed"
+                broadcast({
+                    "type": "apply_complete",
+                    "session_id": session_id,
+                    "platform": "seek",
+                    "result": {
+                        "applied": batch_result.applied,
+                        "skipped": batch_result.skipped,
+                        "errors": batch_result.errors,
+                    },
+                    "message": f"SEEK auto-apply complete: {batch_result.applied} applied, {batch_result.skipped} skipped, {batch_result.errors} errors",
+                })
+            else:
+                session_entry["status"] = "error"
+        except Exception:
+            now = datetime.now(timezone.utc).isoformat()
+            db.update_apply_session(session_id, status="error", completed_at=now)
+            session_entry["status"] = "error"
+        finally:
+            for q in list(subscribers):
+                try:
+                    q.put_nowait(None)
+                except Exception:
+                    pass
+
+    asyncio.create_task(finalize_session())
+
+    async def event_generator():
+        try:
+            while True:
+                evt = await main_queue.get()
+                if evt is None:
+                    break
+                yield f"data: {json.dumps(evt)}\n\n"
+                if evt.get("type") in ("apply_complete", "apply_error", "apply_stopped"):
+                    break
+            yield "data: [DONE]\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if main_queue in subscribers:
+                subscribers.remove(main_queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ────────────── Unified Start Endpoint ──────────────
 
 @router.post("/start")
-async def start_apply(req: StartApplyRequest):
+async def start_apply(req: StartApplyRequest, client_id: str = Depends(get_client_id)):
     """
-    Unified start endpoint for LinkedIn and Indeed auto-apply.
+    Unified start endpoint for LinkedIn, Indeed, and SEEK auto-apply.
     """
+    if req.platform.lower() == "seek":
+        return await start_seek_apply(req, client_id=client_id)
     if req.platform.lower() == "indeed":
-        return await start_indeed_apply(req)
-    return await start_linkedin_apply(req)
+        return await start_indeed_apply(req, client_id=client_id)
+    return await start_linkedin_apply(req, client_id=client_id)
 

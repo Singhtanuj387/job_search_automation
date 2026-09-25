@@ -69,6 +69,11 @@ def sanitize_chat_input(text: str) -> str:
         if len(parts) >= 2:
             return f"/indeed-login {parts[1]} ••••••••"
         return "/indeed-login ••••••••"
+    if cleaned.lower().startswith("/seek-login"):
+        parts = cleaned.split(maxsplit=2)
+        if len(parts) >= 2:
+            return f"/seek-login {parts[1]} ••••••••"
+        return "/seek-login ••••••••"
     return text
 
 
@@ -152,6 +157,41 @@ def execute_message_logic(
             )
             return saved_msg
 
+    # 1c. Immediate Intercept: /seek-login (password optional, passwordless code sign-in supported)
+    if clean_cmd.lower().startswith("/seek-login"):
+        parts = clean_cmd.split(maxsplit=2)
+        if len(parts) >= 2:
+            seek_email = parts[1].strip().strip("'\"`")
+            seek_password = parts[2].strip().strip("'\"`") if len(parts) >= 3 else ""
+            db.save_seek_credentials(seek_email, seek_password, client_id=client_id)
+            assistant_reply = (
+                f"### ✅ SEEK Credentials Saved\n\n"
+                f"Your SEEK login email has been configured successfully.\n\n"
+                f"- **Account:** `{seek_email[:3]}***{seek_email[seek_email.index('@'):] if '@' in seek_email else ''}`\n"
+                f"- **Authentication Method:** Passwordless ('Email me a sign in code')\n"
+                f"- **Security:** Stored locally with AES-256 encryption, never transmitted to external AI models.\n\n"
+                f"👉 Run `/job-skill apply seek` to start auto-applying to your discovered Quick Apply SEEK jobs."
+            )
+            msg_metadata = {"intent": "seek_login", "type": "credentials_saved", "has_credentials": True}
+            saved_msg = db.add_message(
+                session_id=session_id, role="assistant",
+                content=assistant_reply, metadata=msg_metadata,
+            )
+            return saved_msg
+        else:
+            assistant_reply = (
+                "### 🔐 SEEK Credentials\n\n"
+                "SEEK uses passwordless sign-in (OTP code sent to email). No password is required!\n\n"
+                "You can configure your SEEK email in **Settings ⚙️ ➔ Platform Credentials**, "
+                "or run `/seek-login your.email@example.com`."
+            )
+            msg_metadata = {"intent": "seek_login", "type": "credentials_help", "needs_credentials": True}
+            saved_msg = db.add_message(
+                session_id=session_id, role="assistant",
+                content=assistant_reply, metadata=msg_metadata,
+            )
+            return saved_msg
+
     # 1c. Intercept active apply session input (e.g. Indeed OTP code or screening answer typed directly into chat)
     try:
         from web.backend.routes.apply import _active_sessions
@@ -194,10 +234,11 @@ def execute_message_logic(
 
                 is_code = len(ans_text) == 6 and ans_text.isalnum()
                 code_label = "Verification code" if is_code else f"Answer for '{q_field}'"
+                plat_label = (waiting_session_data.get("platform") or "apply").capitalize()
 
                 assistant_reply = (
                     f"✅ **{code_label} Received**\n\n"
-                    f"Submitted `{ans_text}` to the active Indeed apply agent.\n\n"
+                    f"Submitted `{ans_text}` to the active {plat_label} apply agent.\n\n"
                     f"The agent is verifying your authentication and resuming applications now..."
                 )
                 msg_metadata = {"type": "apply_input_ack", "field_name": q_field, "answer": ans_text}
@@ -250,6 +291,8 @@ def execute_message_logic(
             "- `/job-skill help` — Shows this usage guide with all capabilities.\n"
             "- `/job-skill search [role]` — Search 19+ job platforms for roles matching your Candidate Profile. Generates tailored ATS resumes, cover letters, and live apply links.\n"
             "- `/job-skill apply linkedin` — Automates LinkedIn Easy Apply for all discovered opportunities using your Candidate Profile details and active resume.\n"
+            "- `/job-skill apply indeed` — Automates Indeed Apply for all discovered opportunities using passwordless code sign-in.\n"
+            "- `/job-skill apply seek` — Automates SEEK Quick Apply for all discovered opportunities using passwordless email code sign-in.\n"
             "- `/job-skill automate` — Set up a nightly automated search that runs while you sleep.\n"
             "- `/job-skill status` — Check the status of your applications across all stages.\n\n"
             "**Candidate Profile Integration:**\n"
@@ -535,11 +578,80 @@ def execute_message_logic(
                          "fitness_score": j.get("fitness_score"), "apply_url": j.get("apply_url")}
                         for j in indeed_jobs
                     ]
+        elif platform == "seek":
+            # Check credentials (only email required)
+            creds = db.get_seek_credentials(client_id=client_id)
+            if not creds or not creds.get("email"):
+                assistant_reply = (
+                    "### 🔐 SEEK Email Required\n\n"
+                    "To auto-apply to SEEK jobs, your SEEK login email must be configured.\n\n"
+                    "🛡️ **Passwordless Flow:** SEEK uses email verification codes for authentication. "
+                    "You do not need to provide a password — simply enter your email in **Platform Credentials** or run `/seek-login your.email@example.com`.\n\n"
+                    "👉 Click **⚙️ Open Platform Credentials** below to set up your SEEK email."
+                )
+                msg_metadata["needs_credentials"] = True
+                msg_metadata["platform"] = "seek"
+            else:
+                # Check available SEEK jobs
+                seek_jobs = db.get_seek_opportunities_for_apply(max_jobs=25, client_id=client_id)
+                if not seek_jobs:
+                    # Fallback check
+                    all_opps = db.get_opportunities(limit=50, client_id=client_id)
+                    seek_jobs = [
+                        o for o in all_opps
+                        if "seek.com" in (o.get("apply_url") or "").lower() or (o.get("source") or "").lower() == "seek"
+                    ][:25]
+
+                if not seek_jobs:
+                    assistant_reply = (
+                        "### No SEEK Jobs Available\n\n"
+                        "There are no unapplied SEEK jobs in your **Total Job Opportunities**.\n\n"
+                        "Run `/job-skill search` first to discover jobs, then come back and run `/job-skill apply seek`."
+                    )
+                else:
+                    # Build job preview table
+                    job_lines = [
+                        "| # | Company | Title | Fitness | Type | Status |",
+                        "|---|---------|-------|---------|------|--------|",
+                    ]
+                    for idx, j in enumerate(seek_jobs[:10], 1):
+                        score = j.get("fitness_display") or f"{j.get('fitness_score', 75)}% Fit"
+                        job_lines.append(f"| {idx} | {j.get('company')} | {j.get('title')} | {score} | Quick Apply | Queued |")
+
+                    remaining = len(seek_jobs) - 10 if len(seek_jobs) > 10 else 0
+                    remaining_note = f"\n\n*...and {remaining} more jobs queued.*" if remaining > 0 else ""
+
+                    user_email = creds.get("masked_email") or creds.get("email") or "your email"
+
+                    assistant_reply = (
+                        f"### 🤖 SEEK Auto-Apply Agent — Ready\n\n"
+                        f"Found **{len(seek_jobs)} SEEK Quick Apply jobs** ready to apply.\n\n"
+                        + "\n".join(job_lines)
+                        + remaining_note + "\n\n"
+                        f"**What happens next:**\n"
+                        f"1. Stealth browser opens and navigates to SEEK with anti-bot protections\n"
+                        f"2. Authenticates for `{user_email}` via passwordless sign-in code or cached session\n"
+                        f"3. When SEEK emails your 6-digit code, simply type it here in chat to continue\n"
+                        f"4. For each listing, checks for on-platform **Quick apply** (automatically skips external redirects)\n"
+                        f"5. Fills candidate profile details, attaches resume, answers screening questions, and submits\n"
+                        f"6. Applied jobs are recorded in your **Application Tracker**\n\n"
+                        f"⏳ Rate: ~1 application every 2-3 minutes (human-like pacing)\n"
+                        f"🛑 Max: {min(len(seek_jobs), 25)} applications per session\n\n"
+                        f"The apply session will start now. You'll see live progress below."
+                    )
+                    msg_metadata["apply_ready"] = True
+                    msg_metadata["platform"] = "seek"
+                    msg_metadata["seek_jobs_count"] = len(seek_jobs)
+                    msg_metadata["seek_jobs_preview"] = [
+                        {"id": j.get("id"), "company": j.get("company"), "title": j.get("title"),
+                         "fitness_score": j.get("fitness_score"), "apply_url": j.get("apply_url")}
+                        for j in seek_jobs
+                    ]
         elif platform != "linkedin":
             assistant_reply = (
                 f"Auto-apply for **{platform.capitalize()}** is not yet supported.\n\n"
-                f"Currently, **LinkedIn Easy Apply** and **Indeed Apply** are available. "
-                f"Use `/job-skill apply linkedin` or `/job-skill apply indeed` to auto-apply to your discovered jobs.\n\n"
+                f"Currently, **LinkedIn Easy Apply**, **Indeed Apply**, and **SEEK Quick Apply** are available. "
+                f"Use `/job-skill apply linkedin`, `/job-skill apply indeed`, or `/job-skill apply seek` to auto-apply to your discovered jobs.\n\n"
                 f"Support for other platforms will be added in future updates."
             )
         else:

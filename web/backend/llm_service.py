@@ -128,7 +128,7 @@ class LLMService:
                 "message": user_message,
             }
 
-        # 1a. LinkedIn / Indeed login shortcut
+        # 1a. LinkedIn / Indeed / SEEK login shortcut
         if msg_lower.startswith("/linkedin-login"):
             return {
                 "intent": "linkedin_login",
@@ -137,6 +137,11 @@ class LLMService:
         if msg_lower.startswith("/indeed-login"):
             return {
                 "intent": "indeed_login",
+                "message": user_message,
+            }
+        if msg_lower.startswith("/seek-login"):
+            return {
+                "intent": "seek_login",
                 "message": user_message,
             }
 
@@ -149,9 +154,9 @@ class LLMService:
                 "platform": platform,
                 "message": user_message,
             }
-        # Also match natural language: "apply to linkedin jobs", "auto apply linkedin"
-        if re.search(r"(?:auto[- ]?apply|apply\s+(?:to\s+)?(?:all\s+)?(?:my\s+)?)\s*(?:linkedin|indeed|naukri)", msg_lower):
-            platform_match = re.search(r"(linkedin|indeed|naukri|glassdoor|instahyre)", msg_lower)
+        # Also match natural language: "apply to linkedin jobs", "auto apply linkedin", "apply to seek"
+        if re.search(r"(?:auto[- ]?apply|apply\s+(?:to\s+)?(?:all\s+)?(?:my\s+)?)\s*(?:linkedin|indeed|seek|naukri)", msg_lower):
+            platform_match = re.search(r"(linkedin|indeed|seek|naukri|glassdoor|instahyre)", msg_lower)
             if platform_match:
                 return {
                     "intent": "apply_platform",

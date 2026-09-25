@@ -32,6 +32,10 @@ import {
   saveIndeedCredentials,
   deleteIndeedCredentials,
   clearIndeedCookies,
+  getSeekCredentials,
+  saveSeekCredentials,
+  deleteSeekCredentials,
+  clearSeekCookies,
 } from '../api';
 
 export default function SettingsModal({ isOpen, onClose, initialTab = "ai", theme = "light", onToggleTheme = null }) {
@@ -79,6 +83,16 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
   const [indError, setIndError] = useState("");
   const [indSuccess, setIndSuccess] = useState("");
 
+  // Platform Credentials state - SEEK
+  const [seekInfo, setSeekInfo] = useState(null);
+  const [seekEmail, setSeekEmail] = useState("");
+  const [seekPassword, setSeekPassword] = useState("");
+  const [showSeekPassword, setShowSeekPassword] = useState(false);
+  const [isEditingSeek, setIsEditingSeek] = useState(false);
+  const [seekLoading, setSeekLoading] = useState(false);
+  const [seekError, setSeekError] = useState("");
+  const [seekSuccess, setSeekSuccess] = useState("");
+
   const loadSecret = async () => {
     try {
       const data = await getSecret();
@@ -115,10 +129,23 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
     }
   };
 
+  const loadSeekCredentials = async () => {
+    try {
+      const data = await getSeekCredentials();
+      setSeekInfo(data);
+      if (data?.has_credentials && data?.email) {
+        setSeekEmail(data.email);
+      }
+    } catch (e) {
+      console.error("Failed to load SEEK credentials:", e);
+    }
+  };
+
   useEffect(() => {
     loadSecret();
     loadPlatformCredentials();
     loadIndeedCredentials();
+    loadSeekCredentials();
   }, [isOpen]);
 
   const handleTestGemini = async () => {
@@ -289,6 +316,60 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
     }
   };
 
+  const handleSaveSeek = async (e) => {
+    e?.preventDefault();
+    setSeekError("");
+    setSeekSuccess("");
+    setSeekLoading(true);
+
+    try {
+      if (!seekEmail?.trim()) {
+        throw new Error("SEEK Email is required.");
+      }
+      await saveSeekCredentials(seekEmail.trim(), seekPassword?.trim() || "");
+      setSeekSuccess("SEEK email saved. Passwordless 'Email me a sign in code' active.");
+      setSeekPassword("");
+      setIsEditingSeek(false);
+      await loadSeekCredentials();
+    } catch (err) {
+      setSeekError(err.message || "Failed to save SEEK credentials.");
+    } finally {
+      setSeekLoading(false);
+    }
+  };
+
+  const handleDeleteSeek = async () => {
+    if (!window.confirm("Are you sure you want to remove stored SEEK credentials?")) return;
+    setSeekLoading(true);
+    setSeekError("");
+    setSeekSuccess("");
+    try {
+      await deleteSeekCredentials();
+      setSeekSuccess("SEEK credentials removed.");
+      setIsEditingSeek(false);
+      await loadSeekCredentials();
+    } catch (err) {
+      setSeekError(err.message || "Failed to delete SEEK credentials.");
+    } finally {
+      setSeekLoading(false);
+    }
+  };
+
+  const handleClearSeekCookies = async () => {
+    setSeekLoading(true);
+    setSeekError("");
+    setSeekSuccess("");
+    try {
+      await clearSeekCookies();
+      setSeekSuccess("Cached SEEK session cookies cleared.");
+      await loadSeekCredentials();
+    } catch (err) {
+      setSeekError(err.message || "Failed to clear cookies.");
+    } finally {
+      setSeekLoading(false);
+    }
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal-card" style={{ maxWidth: "600px" }}>
@@ -364,7 +445,7 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
           >
             <ShieldCheck size={15} />
             <span>Platform Credentials</span>
-            {(linkedinInfo?.has_credentials || indeedInfo?.has_credentials) && (
+            {(linkedinInfo?.has_credentials || indeedInfo?.has_credentials || seekInfo?.has_credentials) && (
               <span style={{
                 background: "var(--badge-emerald-bg)",
                 color: "var(--badge-emerald-text)",
@@ -373,7 +454,7 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
                 fontSize: "0.7rem",
                 fontWeight: 700,
               }}>
-                {(linkedinInfo?.has_credentials ? 1 : 0) + (indeedInfo?.has_credentials ? 1 : 0)} Connected
+                {(linkedinInfo?.has_credentials ? 1 : 0) + (indeedInfo?.has_credentials ? 1 : 0) + (seekInfo?.has_credentials ? 1 : 0)} Connected
               </span>
             )}
           </button>
@@ -977,6 +1058,213 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
                       style={{ fontSize: "0.8rem", padding: "0.4rem 0.95rem" }}
                     >
                       {indLoading ? "Saving..." : (indeedInfo?.has_credentials ? "Update Indeed Email" : "Save Indeed Gmail")}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            {/* ────────────── SEEK PLATFORM CARD ────────────── */}
+            <div style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: "10px",
+              padding: "1.2rem",
+              marginTop: "1rem",
+            }}>
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <div style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "8px",
+                    background: "#e60278",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 800,
+                    color: "#ffffff",
+                    fontSize: "0.85rem",
+                    letterSpacing: "0.5px",
+                  }}>
+                    SEK
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "0.95rem", color: "var(--text-primary)" }}>SEEK</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>SEEK Quick Apply Auto-Application Agent</div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  {seekInfo?.has_credentials ? (
+                    <span style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.3rem",
+                      background: "var(--badge-emerald-bg)",
+                      color: "var(--badge-emerald-text)",
+                      border: "1px solid var(--badge-emerald-border)",
+                      borderRadius: "20px",
+                      padding: "0.2rem 0.65rem",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                    }}>
+                      <CheckCircle2 size={12} /> Connected & Encrypted
+                    </span>
+                  ) : (
+                    <span style={{
+                      background: "var(--bg-secondary)",
+                      color: "var(--text-muted)",
+                      border: "1px solid var(--border-subtle)",
+                      borderRadius: "20px",
+                      padding: "0.2rem 0.65rem",
+                      fontSize: "0.75rem",
+                    }}>
+                      Not Configured
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {seekInfo?.has_credentials && !isEditingSeek ? (
+                <div>
+                  <div style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "6px",
+                    padding: "0.75rem 0.85rem",
+                    marginBottom: "0.85rem",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 600 }}>Active Account</span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--accent-gold)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                        <Lock size={12} /> AES-256 Vault
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-main)", fontFamily: "JetBrains Mono, monospace" }}>
+                      {seekInfo.email || seekInfo.masked_email}
+                    </div>
+                    {seekInfo.saved_at && (
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                        Saved: {new Date(seekInfo.saved_at).toLocaleDateString()} at {new Date(seekInfo.saved_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
+                    <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ fontSize: "0.75rem", color: seekInfo.has_cookies ? "#34d399" : "var(--accent-gold)", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        <ShieldCheck size={14} />
+                        <span>{seekInfo.has_cookies ? "Browser session cached (instant login active)" : "Passwordless active (agent will request 6-digit OTP code in chat)"}</span>
+                      </div>
+                      {seekInfo.has_cookies && (
+                        <button
+                          type="button"
+                          onClick={handleClearSeekCookies}
+                          disabled={seekLoading}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--accent-gold)",
+                            fontSize: "0.72rem",
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                          }}
+                          title="Clear cached browser cookies to force fresh login"
+                        >
+                          Clear session
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.6rem" }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => { setIsEditingSeek(true); setSeekPassword(""); }}
+                      style={{ fontSize: "0.8rem", padding: "0.35rem 0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                    >
+                      <Edit2 size={13} /> Change Email
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleDeleteSeek}
+                      disabled={seekLoading}
+                      style={{ fontSize: "0.8rem", padding: "0.35rem 0.75rem", color: "#f87171", borderColor: "rgba(239, 68, 68, 0.3)", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                    >
+                      <Trash2 size={13} /> Disconnect
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveSeek}>
+                  {seekError && (
+                    <div style={{ background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#f87171", padding: "0.5rem 0.75rem", borderRadius: "6px", fontSize: "0.8rem", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <AlertCircle size={14} />
+                      <div>{seekError}</div>
+                    </div>
+                  )}
+
+                  {seekSuccess && (
+                    <div style={{ background: "var(--badge-emerald-bg)", border: "1px solid var(--badge-emerald-border)", color: "var(--badge-emerald-text)", padding: "0.5rem 0.75rem", borderRadius: "6px", fontSize: "0.8rem", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <Check size={14} /> {seekSuccess}
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: "0.85rem" }}>
+                    <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "0.35rem" }}>
+                      SEEK Login Email Address
+                    </label>
+                    <input
+                      type="email"
+                      className="input-field"
+                      placeholder="e.g. your.email@example.com"
+                      value={seekEmail}
+                      onChange={(e) => setSeekEmail(e.target.value)}
+                      required
+                      disabled={seekLoading}
+                      style={{ width: "100%", fontSize: "0.85rem", padding: "0.5rem 0.75rem" }}
+                    />
+                  </div>
+
+                  <div style={{
+                    background: "rgba(230, 2, 120, 0.08)",
+                    border: "1px solid rgba(230, 2, 120, 0.25)",
+                    borderRadius: "6px",
+                    padding: "0.65rem 0.85rem",
+                    fontSize: "0.76rem",
+                    color: "var(--text-main)",
+                    marginBottom: "0.85rem",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.55rem",
+                    lineHeight: "1.4",
+                  }}>
+                    <ShieldCheck size={16} color="#e60278" style={{ flexShrink: 0, marginTop: "2px" }} />
+                    <div>
+                      <strong style={{ color: "#e60278" }}>Quick Apply &amp; Passwordless Auth:</strong> SEEK sends a 6-digit sign-in code to your email. The agent will prompt you in chat to enter it once. The agent applies <em>only</em> to on-platform Quick Apply listings, safely skipping external redirects.
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                    {isEditingSeek && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setIsEditingSeek(false)}
+                        disabled={seekLoading}
+                        style={{ fontSize: "0.8rem", padding: "0.4rem 0.85rem" }}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={seekLoading || !seekEmail?.trim()}
+                      style={{ fontSize: "0.8rem", padding: "0.4rem 0.95rem" }}
+                    >
+                      {seekLoading ? "Saving..." : (seekInfo?.has_credentials ? "Update SEEK Email" : "Save SEEK Email")}
                     </button>
                   </div>
                 </form>
