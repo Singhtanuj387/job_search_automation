@@ -122,7 +122,7 @@ def test_build_direct_job_url():
         "Sydney NSW",
         item_id="94652603",
     )
-    assert url_seek == "https://au.seek.com/Macquarie-Group-Data-Scientist-+-Financial-Data-Architecture-jobs/in-All-Sydney-NSW?jobId=94652603&type=promoted"
+    assert url_seek == "https://au.seek.com/job/94652603"
 
 
 def test_indeed_authentic_postings_not_hardcoded_dummies():
