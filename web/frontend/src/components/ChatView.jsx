@@ -18,6 +18,7 @@ import {
   Clock,
   ShieldCheck,
   Key,
+  Search,
 } from 'lucide-react';
 import { sendMessage, sendMessageStream, addToTracker, startLinkedInApply, startIndeedApply, startSeekApply, getActiveApplySession, reconnectApplySession, respondToApplyQuestion } from '../api';
 import FormattedMessage from './FormattedMessage';
@@ -377,32 +378,134 @@ export default function ChatView({
     }
   };
 
-  const skillCommands = [
-    { cmd: "/job-skill search", label: "🔍 /job-skill search" },
-    { cmd: "/job-skill apply linkedin", label: "🤖 /job-skill apply linkedin" },
-    { cmd: "/job-skill apply indeed", label: "🤖 /job-skill apply indeed" },
-    { cmd: "/job-skill apply seek", label: "🤖 /job-skill apply seek" },
-    { action: "credentials", label: "🔐 Platform Credentials Vault" },
-    { cmd: "/job-skill status", label: "📊 /job-skill status" },
-    { cmd: "/job-skill automate", label: "⏰ /job-skill automate" },
-    { cmd: "/job-skill help", label: "📖 /job-skill help" },
+  const [showAllCommands, setShowAllCommands] = useState(false);
+
+  const primaryActions = [
+    { label: "Search Roles", icon: "search", cmd: `/job-skill search` },
+    { label: "Auto-Apply", icon: "zap", cmd: `/job-skill apply linkedin` },
+    { label: "Pipeline Status", icon: "status", cmd: `/job-skill status` },
+    { label: "Platform Vault", icon: "vault", action: "credentials" },
   ];
 
-  const quickPrompts = [
-    `Find ${profile?.role || 'React Developer'} jobs in ${profile?.location || 'Bangalore'}`,
-    "What's the status of my applications?",
-    "Show senior Python backend roles",
-    "Schedule automated nightly job scan"
+  const secondaryActions = [
+    { label: "Apply on SEEK", cmd: `/job-skill apply seek` },
+    { label: "Apply on Indeed", cmd: `/job-skill apply indeed` },
+    { label: "Nightly Automation", cmd: `/job-skill automate` },
+    { label: "Help & Commands", cmd: `/job-skill help` },
   ];
+
+  const candidateName = profile?.name ? profile.name.trim().split(' ')[0] : 'there';
+  const targetRole = profile?.role || 'Full Stack Engineer';
+  const targetLocation = profile?.location && profile.location !== 'any' ? profile.location : 'Bangalore';
 
   return (
     <div className="chat-container">
       <div className="chat-messages">
+        {/* Executive Welcome Hero when empty */}
+        {messages.length === 0 && (
+          <div className="chat-welcome-hero">
+            <div className="hero-status-pill">
+              <span className="hero-status-beacon" />
+              <span className="hero-status-text">AUTONOMOUS CAREER COPILOT • READY</span>
+            </div>
+
+            <h1 className="hero-heading">
+              Accelerate your search, <span className="hero-heading-gradient">{candidateName}</span>
+            </h1>
+            <p className="hero-subtext">
+              Spider 18+ verified global hiring portals, evaluate deep ATS candidate compatibility, and deploy 1-click autonomous application agents with local credential isolation.
+            </p>
+
+            <div className="hero-bento-grid">
+              <div
+                className="hero-bento-card"
+                onClick={() => handleSend(`Find ${targetRole} jobs in ${targetLocation}`)}
+              >
+                <div className="bento-card-icon-wrap accent-terracotta">
+                  <Search size={18} strokeWidth={2.2} />
+                </div>
+                <div className="bento-card-content">
+                  <div className="bento-card-header">
+                    <span className="bento-card-title">Live Opportunity Radar</span>
+                    <span className="bento-card-badge">18+ Sources</span>
+                  </div>
+                  <p className="bento-card-desc">
+                    Spider LinkedIn, SEEK, Indeed, Cutshort, Instahyre & more for <strong>{targetRole}</strong> in <strong>{targetLocation}</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div
+                className="hero-bento-card"
+                onClick={() => handleSend('/job-skill apply linkedin')}
+              >
+                <div className="bento-card-icon-wrap accent-amber">
+                  <Sparkles size={18} strokeWidth={2.2} />
+                </div>
+                <div className="bento-card-content">
+                  <div className="bento-card-header">
+                    <span className="bento-card-title">Autonomous 1-Click Apply</span>
+                    <span className="bento-card-badge">AI Agent</span>
+                  </div>
+                  <p className="bento-card-desc">
+                    Deploy intelligent bot agents for LinkedIn, SEEK & Indeed with custom resume tailoring & screening QA.
+                  </p>
+                </div>
+              </div>
+
+              <div
+                className="hero-bento-card"
+                onClick={() => onOpenSettings && onOpenSettings('platforms')}
+              >
+                <div className="bento-card-icon-wrap accent-blue">
+                  <ShieldCheck size={18} strokeWidth={2.2} />
+                </div>
+                <div className="bento-card-content">
+                  <div className="bento-card-header">
+                    <span className="bento-card-title">Credentials & Vault</span>
+                    <span className="bento-card-badge">AES-256</span>
+                  </div>
+                  <p className="bento-card-desc">
+                    Manage session credentials, verify resume ATS readiness score, and inspect nightly spider schedules.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="hero-quick-prompts-section">
+              <span className="quick-prompts-label">Quick actions:</span>
+              <div className="quick-prompts-list">
+                <button
+                  className="hero-prompt-chip"
+                  onClick={() => handleSend(`Find ${targetRole} jobs in ${targetLocation}`)}
+                >
+                  <Search size={13} />
+                  <span>Find {targetRole} roles</span>
+                </button>
+                <button
+                  className="hero-prompt-chip"
+                  onClick={() => handleSend("/job-skill status")}
+                >
+                  <Briefcase size={13} />
+                  <span>Application pipeline summary</span>
+                </button>
+                <button
+                  className="hero-prompt-chip"
+                  onClick={() => handleSend("/job-skill apply seek")}
+                >
+                  <Sparkles size={13} />
+                  <span>Trigger SEEK Auto-Apply</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Conversation Messages */}
         {messages.map((msg, index) => {
           const userInitial = profile?.name ? profile.name.trim().charAt(0).toUpperCase() : 'U';
           const hasJobs = Boolean(msg.metadata?.jobs && msg.metadata.jobs.length > 0);
 
-          // Extract clean conversational intro when jobs table is present (prevents giant wall of 27 text paragraphs)
           let displayContent = msg.content;
           if (hasJobs && msg.role === 'assistant') {
             const lines = msg.content.split('\n');
@@ -429,16 +532,14 @@ export default function ChatView({
           return (
             <div key={index} className={`chat-message ${msg.role}`}>
               <div className={`chat-avatar ${msg.role}`}>
-                {msg.role === 'user' ? userInitial : <Sparkles size={16} />}
+                {msg.role === 'user' ? userInitial : <Sparkles size={15} />}
               </div>
               <div className={`message-bubble ${hasJobs ? 'has-data-table' : ''}`}>
-                {/* Clean formatted chat reply */}
                 <FormattedMessage
                   content={displayContent}
                   stripTable={hasJobs}
                 />
 
-                {/* Live Web Discovery accordion (Claude-style) */}
                 {msg.metadata?.search_sources && msg.metadata.search_sources.length > 0 && (
                   <LiveWebSearch
                     sources={msg.metadata.search_sources}
@@ -448,7 +549,6 @@ export default function ChatView({
                   />
                 )}
 
-                {/* Clean, proper matrix table */}
                 {hasJobs && (
                   <JobResultsTable
                     jobs={msg.metadata.jobs}
@@ -457,7 +557,6 @@ export default function ChatView({
                   />
                 )}
 
-                {/* Apply progress widget attached directly to the latest apply_ready assistant message */}
                 {msg.metadata?.apply_ready && index === messages.findLastIndex(m => m.metadata?.apply_ready) && (
                   <div style={{ marginTop: "1rem" }}>
                     <LiveApplyProgress
@@ -475,7 +574,6 @@ export default function ChatView({
                   </div>
                 )}
 
-                {/* Apply progress (for completed apply sessions in history) */}
                 {msg.metadata?.type === 'apply_complete' && (
                   <LiveApplyProgress
                     active={false}
@@ -494,42 +592,23 @@ export default function ChatView({
                   />
                 )}
 
-                {/* Platform Credentials CTA banner if credentials are needed */}
                 {msg.metadata?.needs_credentials && (
-                  <div style={{
-                    marginTop: "0.85rem",
-                    padding: "0.85rem 1rem",
-                    background: "rgba(217, 119, 6, 0.08)",
-                    borderRadius: "8px",
-                    border: "1px solid rgba(217, 119, 6, 0.3)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexWrap: "wrap",
-                    gap: "0.75rem",
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                      <ShieldCheck size={20} color="var(--accent-gold)" style={{ flexShrink: 0 }} />
+                  <div className="credentials-vault-banner">
+                    <div className="vault-banner-info">
+                      <ShieldCheck size={20} className="vault-banner-icon" />
                       <div>
-                        <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text-main)" }}>
+                        <div className="vault-banner-title">
                           Local Platform Credentials Vault
                         </div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                          No passwords in chat. Stored locally with AES-256 encryption.
+                        <div className="vault-banner-subtitle">
+                          No credentials in chat. Stored locally with AES-256 machine encryption.
                         </div>
                       </div>
                     </div>
                     <button
-                      className="btn-primary"
+                      type="button"
+                      className="btn-open-vault"
                       onClick={() => onOpenSettings && onOpenSettings('platforms')}
-                      style={{
-                        padding: "0.45rem 0.9rem",
-                        fontSize: "0.82rem",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.4rem",
-                        cursor: "pointer",
-                      }}
                     >
                       <Key size={14} /> Open Platform Credentials
                     </button>
@@ -542,7 +621,7 @@ export default function ChatView({
 
         {loading && (
           <div className="chat-message assistant">
-            <div className="chat-avatar assistant"><Sparkles size={16} /></div>
+            <div className="chat-avatar assistant"><Sparkles size={15} /></div>
             <div className="message-bubble has-data-table" style={{ width: "100%" }}>
               {liveStreamSearch.active && liveStreamSearch.sources.length > 0 ? (
                 <LiveWebSearch
@@ -562,9 +641,9 @@ export default function ChatView({
                   defaultExpanded={true}
                 />
               ) : (
-                <div style={{ color: "var(--text-muted)", fontStyle: "italic", display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem" }}>
-                  <Sparkles size={16} className="animate-spin" color="var(--accent-gold)" />
-                  <span>{liveStreamSearch.active ? "Searching 18+ verified platforms and scoring candidate fitness across opportunities..." : "Thinking & drafting response..."}</span>
+                <div className="chat-loading-shimmer">
+                  <Sparkles size={16} className="animate-spin text-terracotta" />
+                  <span>{liveStreamSearch.active ? "Spidering 18+ verified platforms & scoring candidate fitness..." : "Synthesizing career insights & drafting response..."}</span>
                 </div>
               )}
             </div>
@@ -573,66 +652,95 @@ export default function ChatView({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick suggestions & Input */}
+      {/* Streamlined Prompt Deck & Input */}
       <div className="chat-input-area">
-        {/* Commands Bar */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginBottom: "0.4rem" }}>
-          {skillCommands.map((c, idx) => (
-            <button
-              key={idx}
-              className="prompt-chip"
-              onClick={() => {
-                if (c.action === 'credentials') {
-                  onOpenSettings && onOpenSettings('platforms');
-                } else {
-                  handleSend(c.cmd);
-                }
-              }}
-              style={{ fontSize: "0.75rem", padding: "0.25rem 0.55rem", borderColor: "rgba(217, 119, 6, 0.4)", color: "var(--accent-gold)" }}
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-
-        {messages.length < 3 && (
-          <div className="quick-prompts">
-            {quickPrompts.map((p, idx) => (
-              <button key={idx} className="prompt-chip" onClick={() => handleSend(p)}>
-                {p}
+        {/* Quick Command Ribbon */}
+        <div className="chat-actions-ribbon">
+          <div className="ribbon-primary-actions">
+            {primaryActions.map((act, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="btn-ribbon-action"
+                onClick={() => {
+                  if (act.action === 'credentials') {
+                    onOpenSettings && onOpenSettings('platforms');
+                  } else {
+                    handleSend(act.cmd);
+                  }
+                }}
+              >
+                {act.icon === 'search' && <Search size={12} strokeWidth={2.2} />}
+                {act.icon === 'zap' && <Sparkles size={12} strokeWidth={2.2} />}
+                {act.icon === 'status' && <Briefcase size={12} strokeWidth={2.2} />}
+                {act.icon === 'vault' && <Key size={12} strokeWidth={2.2} />}
+                <span>{act.label}</span>
               </button>
             ))}
-          </div>
-        )}
 
+            <button
+              type="button"
+              className={`btn-ribbon-toggle ${showAllCommands ? 'active' : ''}`}
+              onClick={() => setShowAllCommands(!showAllCommands)}
+              title="Show additional commands"
+            >
+              <span>{showAllCommands ? 'Less' : 'More'}</span>
+              {showAllCommands ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+          </div>
+
+          {showAllCommands && (
+            <div className="ribbon-secondary-dropdown animate-fade-in">
+              {secondaryActions.map((sec, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className="btn-ribbon-subaction"
+                  onClick={() => {
+                    setShowAllCommands(false);
+                    handleSend(sec.cmd);
+                  }}
+                >
+                  <span>{sec.label}</span>
+                  <span className="ribbon-cmd-code">{sec.cmd}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Luxury Glass Floating Input Bar */}
         <form className="input-box" onSubmit={(e) => { e.preventDefault(); handleSend(); }}>
           <button
             type="button"
-            className="btn-icon-copy"
+            className="input-tool-button"
             onClick={onOpenOnboarding}
-            title="Update Resume or Target Profile"
-            style={{ marginRight: "0.25rem" }}
+            title="Update Candidate Resume or Target Criteria"
           >
-            <Paperclip size={18} />
+            <Paperclip size={16} />
           </button>
           <button
             type="button"
-            className="btn-icon-copy"
+            className="input-tool-button"
             onClick={() => onOpenSettings && onOpenSettings('platforms')}
-            title="Platform Credentials Vault (LinkedIn, etc.)"
-            style={{ marginRight: "0.25rem" }}
+            title="Local Credentials Vault (LinkedIn, SEEK, Indeed)"
           >
-            <Key size={17} color="var(--accent-gold)" />
+            <Key size={15} />
           </button>
           <input
             className="chat-input"
-            placeholder="Ask anything: 'Find React jobs in Bangalore', 'Check status', or paste a URL..."
+            placeholder="Ask anything: 'Find React jobs in Bangalore', 'Check status', or paste a job link..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
           />
-          <button type="submit" className="btn-primary" disabled={loading || !input.trim()} style={{ padding: "0.5rem 0.85rem" }}>
-            <Send size={15} />
+          <button
+            type="submit"
+            className="btn-send-message"
+            disabled={loading || !input.trim()}
+            title="Send query"
+          >
+            <Send size={15} strokeWidth={2.2} />
           </button>
         </form>
       </div>

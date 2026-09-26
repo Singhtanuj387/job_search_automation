@@ -60,6 +60,7 @@ class AppDatabase:
                 ("resume_filename", "TEXT NOT NULL DEFAULT ''"),
                 ("resume_uploaded_at", "TEXT NOT NULL DEFAULT ''"),
                 ("skills_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("job_type", "TEXT NOT NULL DEFAULT 'Full-time'"),
             ]:
                 try:
                     c.execute(f"ALTER TABLE profile ADD COLUMN {col} {ctype}")
@@ -224,6 +225,7 @@ class AppDatabase:
                     notice_period TEXT NOT NULL DEFAULT 'Immediate',
                     expected_ctc_lpa TEXT NOT NULL DEFAULT '',
                     company_type TEXT NOT NULL DEFAULT 'Any',
+                    job_type TEXT NOT NULL DEFAULT 'Full-time',
                     resume_text TEXT NOT NULL DEFAULT '',
                     resume_file_path TEXT NOT NULL DEFAULT '',
                     resume_filename TEXT NOT NULL DEFAULT '',
@@ -232,6 +234,10 @@ class AppDatabase:
                     updated_at TEXT NOT NULL
                 )
             """)
+            try:
+                c.execute("ALTER TABLE user_profiles ADD COLUMN job_type TEXT NOT NULL DEFAULT 'Full-time'")
+            except sqlite3.OperationalError:
+                pass
             c.execute("""
                 CREATE TABLE IF NOT EXISTS user_secrets (
                     session_id TEXT NOT NULL,
@@ -402,6 +408,7 @@ class AppDatabase:
         notice_period: Optional[str] = None,
         expected_ctc_lpa: Optional[str] = None,
         company_type: Optional[str] = None,
+        job_type: Optional[str] = None,
         resume_filename: Optional[str] = None,
         resume_uploaded_at: Optional[str] = None,
         skills: Optional[List[str]] = None,
@@ -421,6 +428,7 @@ class AppDatabase:
         c_notice = notice_period if notice_period is not None else current.get("notice_period", "Immediate")
         c_ctc = expected_ctc_lpa if expected_ctc_lpa is not None else current.get("expected_ctc_lpa", "")
         c_type = company_type if company_type is not None else current.get("company_type", "Any")
+        c_job_type = job_type if job_type is not None else current.get("job_type", "Full-time")
         if skills is not None:
             skills_str = json.dumps(skills)
         else:
@@ -431,10 +439,10 @@ class AppDatabase:
                 """
                 INSERT INTO user_profiles (
                     session_id, role, location, seniority, resume_text, resume_file_path,
-                    name, email, phone, linkedin_url, notice_period, expected_ctc_lpa, company_type,
+                    name, email, phone, linkedin_url, notice_period, expected_ctc_lpa, company_type, job_type,
                     resume_filename, resume_uploaded_at, skills_json, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     role = excluded.role,
                     location = excluded.location,
@@ -448,6 +456,7 @@ class AppDatabase:
                     notice_period = excluded.notice_period,
                     expected_ctc_lpa = excluded.expected_ctc_lpa,
                     company_type = excluded.company_type,
+                    job_type = excluded.job_type,
                     resume_filename = excluded.resume_filename,
                     resume_uploaded_at = excluded.resume_uploaded_at,
                     skills_json = excluded.skills_json,
@@ -455,7 +464,7 @@ class AppDatabase:
                 """,
                 (
                     clean_sess, role, location, seniority, r_text, r_path, c_name, c_email, c_phone,
-                    c_linkedin, c_notice, c_ctc, c_type, r_fname, r_up_at, skills_str, now
+                    c_linkedin, c_notice, c_ctc, c_type, c_job_type, r_fname, r_up_at, skills_str, now
                 )
             )
             # If default session, keep legacy profile updated too
@@ -464,10 +473,10 @@ class AppDatabase:
                     """
                     INSERT INTO profile (
                         id, role, location, seniority, resume_text, resume_file_path,
-                        name, email, phone, linkedin_url, notice_period, expected_ctc_lpa, company_type,
+                        name, email, phone, linkedin_url, notice_period, expected_ctc_lpa, company_type, job_type,
                         resume_filename, resume_uploaded_at, skills_json, updated_at
                     )
-                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         role = excluded.role,
                         location = excluded.location,
@@ -481,6 +490,7 @@ class AppDatabase:
                         notice_period = excluded.notice_period,
                         expected_ctc_lpa = excluded.expected_ctc_lpa,
                         company_type = excluded.company_type,
+                        job_type = excluded.job_type,
                         resume_filename = excluded.resume_filename,
                         resume_uploaded_at = excluded.resume_uploaded_at,
                         skills_json = excluded.skills_json,
@@ -488,7 +498,7 @@ class AppDatabase:
                     """,
                     (
                         role, location, seniority, r_text, r_path, c_name, c_email, c_phone,
-                        c_linkedin, c_notice, c_ctc, c_type, r_fname, r_up_at, skills_str, now
+                        c_linkedin, c_notice, c_ctc, c_type, c_job_type, r_fname, r_up_at, skills_str, now
                     )
                 )
             conn.commit()

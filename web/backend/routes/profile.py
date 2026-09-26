@@ -29,6 +29,7 @@ class ProfileUpdateRequest(BaseModel):
     notice_period: Optional[str] = None
     expected_ctc_lpa: Optional[str] = None
     company_type: Optional[str] = None
+    job_type: Optional[str] = "Full-time"
     resume_filename: Optional[str] = None
     resume_uploaded_at: Optional[str] = None
     skills: Optional[List[str]] = None
@@ -56,6 +57,7 @@ def update_profile(req: ProfileUpdateRequest, client_id: str = Depends(get_clien
         notice_period=req.notice_period,
         expected_ctc_lpa=req.expected_ctc_lpa,
         company_type=req.company_type,
+        job_type=req.job_type,
         resume_filename=req.resume_filename,
         resume_uploaded_at=req.resume_uploaded_at,
         skills=req.skills,
@@ -102,6 +104,7 @@ async def upload_resume(file: UploadFile = File(...), client_id: str = Depends(g
         notice_period=current.get("notice_period", "Immediate"),
         expected_ctc_lpa=current.get("expected_ctc_lpa", ""),
         company_type=current.get("company_type", "Any"),
+        job_type=current.get("job_type", "Full-time"),
         session_id=client_id,
     )
 

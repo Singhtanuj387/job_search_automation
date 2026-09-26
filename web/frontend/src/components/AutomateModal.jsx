@@ -47,62 +47,76 @@ export default function AutomateModal({ isOpen, onClose }) {
     <div className="modal-overlay">
       <div className="modal-card">
         <div className="modal-header">
-          <div className="modal-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Clock size={20} color="var(--accent-gold)" /> Automated Nightly Search
+          <div className="modal-title">
+            <div className="page-header-icon-wrap" style={{ width: "36px", height: "36px", borderRadius: "10px" }}>
+              <Clock size={18} className="text-terracotta" />
+            </div>
+            <span>Automated Nightly Search</span>
           </div>
-          <button className="close-btn" onClick={onClose}><X size={18} /></button>
+          <button className="close-btn" onClick={onClose} aria-label="Close dialog">
+            <X size={16} />
+          </button>
         </div>
 
         {error && (
-          <div style={{ background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#f87171", padding: "0.65rem 0.85rem", borderRadius: "8px", fontSize: "0.85rem", marginBottom: "1rem" }}>
-            {error}
+          <div className="modal-banner error">
+            <AlertCircle size={16} style={{ marginTop: "1px", flexShrink: 0 }} />
+            <div>{error}</div>
           </div>
         )}
 
         {msg && (
-          <div style={{ background: "rgba(16, 185, 129, 0.12)", border: "1px solid rgba(16, 185, 129, 0.3)", color: "#34d399", padding: "0.65rem 0.85rem", borderRadius: "8px", fontSize: "0.85rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Check size={16} /> {msg}
+          <div className="modal-banner success">
+            <Check size={16} style={{ marginTop: "1px", flexShrink: 0 }} />
+            <div>{msg}</div>
           </div>
         )}
 
-        <div style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: "1rem", marginBottom: "1.25rem" }}>
-          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>Enable Nightly Automated Scan</div>
-              <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
-                Runs while you sleep and generates a tailored morning report ready when you open the app.
-              </div>
+        {/* Toggle Switch Card */}
+        <label className="modal-switch-card">
+          <div>
+            <div className="switch-label-title">Enable Nightly Autonomous Scan</div>
+            <div className="switch-label-desc">
+              Runs while you sleep, scrapes fresh jobs, and compiles an executive morning briefing ready in Career Copilot.
             </div>
+          </div>
+          <div className="toggle-switch-wrapper">
             <input
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              style={{ width: "20px", height: "20px", accentColor: "var(--accent-gold)", cursor: "pointer" }}
             />
-          </label>
-        </div>
+            <span className="toggle-switch-slider" />
+          </div>
+        </label>
 
-        <div className="form-group">
-          <label className="form-label">Morning Delivery Time</label>
+        <div className="form-group" style={{ marginBottom: "1.25rem" }}>
+          <label className="form-label">Morning Delivery Target Time</label>
           <input
             type="time"
             className="form-input"
             value={scheduleTime}
             onChange={(e) => setScheduleTime(e.target.value)}
+            style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, maxWidth: "200px" }}
           />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "1.5rem" }}>
-          <Shield size={14} color="var(--accent-gold)" /> Respects per-domain rate limits, jitter, and robots.txt Crawl-delay.
+        <div className="trust-card-text" style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.75rem" }}>
+          <Shield size={14} className="text-terracotta" />
+          <span>Respects per-domain rate limits, jitter protection, and robots.txt Crawl-delay.</span>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
           <button className="btn-secondary" onClick={handleRunNow} disabled={running}>
-            <Play size={14} /> {running ? "Running Scan..." : "Trigger Run Now"}
+            <Play size={14} />
+            <span>{running ? "Running Scan..." : "Trigger Run Now"}</span>
           </button>
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button className="btn-primary" onClick={handleSave}>Save Schedule</button>
+            <button className="btn-primary" onClick={handleSave}>
+              <Check size={14} />
+              <span>Save Schedule</span>
+            </button>
           </div>
         </div>
       </div>

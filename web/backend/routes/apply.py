@@ -1299,7 +1299,7 @@ async def start_seek_apply(req: StartApplyRequest, client_id: str = Depends(get_
                     "type": "apply_error",
                     "session_id": session_id,
                     "platform": "seek",
-                    "message": "Failed to log into SEEK. Check your credentials in Platform Credentials.",
+                    "message": "SEEK session inactive or verification required. Please open SEEK (au.seek.com) in Brave or Chrome to log in once, then rerun.",
                 })
                 now = datetime.now(timezone.utc).isoformat()
                 db.update_apply_session(session_id, status="error", completed_at=now)

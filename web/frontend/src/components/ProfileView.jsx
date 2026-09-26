@@ -47,6 +47,7 @@ export default function ProfileView({ onProfileUpdated }) {
   const [noticePeriod, setNoticePeriod] = useState('Immediate');
   const [expectedCtc, setExpectedCtc] = useState('18-25 LPA');
   const [companyType, setCompanyType] = useState('Product-based');
+  const [jobType, setJobType] = useState('Full-time');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [linkedinUrl, setLinkedinUrl] = useState('');
@@ -71,6 +72,7 @@ export default function ProfileView({ onProfileUpdated }) {
         setNoticePeriod(p.notice_period || 'Immediate');
         setExpectedCtc(p.expected_ctc_lpa || '18-25 LPA');
         setCompanyType(p.company_type || 'Product-based');
+        setJobType(p.job_type || 'Full-time');
         setEmail(p.email || '');
         setPhone(p.phone || '');
         setLinkedinUrl(p.linkedin_url || '');
@@ -116,6 +118,7 @@ export default function ProfileView({ onProfileUpdated }) {
         notice_period: noticePeriod,
         expected_ctc_lpa: expectedCtc.trim(),
         company_type: companyType,
+        job_type: jobType,
         email: email.trim(),
         phone: phone.trim(),
         linkedin_url: linkedinUrl.trim(),
@@ -158,6 +161,7 @@ export default function ProfileView({ onProfileUpdated }) {
         if (p.email && !email) setEmail(p.email);
         if (p.phone && !phone) setPhone(p.phone);
         if (p.linkedin_url && !linkedinUrl) setLinkedinUrl(p.linkedin_url);
+        if (p.job_type) setJobType(p.job_type);
 
         setSaveSuccess(true);
         setHasUnsavedChanges(false);
@@ -218,53 +222,27 @@ export default function ProfileView({ onProfileUpdated }) {
   }
 
   return (
-    <div className="profile-view-container" style={{
-      padding: '1.75rem 2rem 3rem',
-      height: '100%',
-      overflowY: 'auto',
-      maxWidth: '1280px',
-      margin: '0 auto',
-      width: '100%'
-    }}>
+    <div className="profile-view-container">
       {/* Top Action Bar */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '1.5rem',
-        paddingBottom: '1rem',
-        borderBottom: '1px solid var(--border-subtle)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{
-            background: 'var(--accent-bg)',
-            padding: '0.6rem',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--accent-gold-glow)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <UserCheck size={22} color="var(--accent-gold)" />
+      <div className="profile-page-header">
+        <div className="page-header-left">
+          <div className="page-header-icon-wrap">
+            <UserCheck size={20} className="text-terracotta" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              Candidate Profile & Preferences
-            </h1>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Single source of truth for searches, LinkedIn auto-apply, and nightly automations
-            </span>
+            <h1 className="page-header-title">Candidate Profile & Target Criteria</h1>
+            <p className="page-header-subtitle">
+              Single source of truth for verified job spiders, resume tailoring, and autonomous bots.
+            </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="page-header-actions">
           {hasUnsavedChanges && (
-            <span style={{ fontSize: '0.78rem', color: 'var(--badge-amber-text)', background: 'var(--badge-amber-bg)', padding: '0.3rem 0.65rem', borderRadius: '20px', border: '1px solid var(--badge-amber-border)', fontWeight: 600 }}>
-              Unsaved changes •
-            </span>
+            <span className="badge-unsaved">Unsaved changes •</span>
           )}
           {saveSuccess && (
-            <span style={{ fontSize: '0.78rem', color: 'var(--badge-emerald-text)', background: 'var(--badge-emerald-bg)', padding: '0.3rem 0.65rem', borderRadius: '20px', border: '1px solid var(--badge-emerald-border)', display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600 }}>
+            <span className="badge-saved">
               <Check size={13} /> Saved successfully
             </span>
           )}
@@ -273,17 +251,16 @@ export default function ProfileView({ onProfileUpdated }) {
             className="btn-primary"
             onClick={handleSaveProfile}
             disabled={saving}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.55rem 1.15rem' }}
           >
             {saving ? (
               <>
-                <RefreshCw size={15} className="spin" />
+                <RefreshCw size={14} className="animate-spin" />
                 <span>Saving...</span>
               </>
             ) : (
               <>
-                <Save size={15} />
-                <span>Save Profile Changes</span>
+                <Save size={14} />
+                <span>Save Profile</span>
               </>
             )}
           </button>
@@ -291,122 +268,79 @@ export default function ProfileView({ onProfileUpdated }) {
       </div>
 
       {error && (
-        <div style={{
-          background: 'rgba(239, 68, 68, 0.12)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          borderRadius: 'var(--radius-md)',
-          padding: '0.75rem 1rem',
-          color: '#f87171',
-          fontSize: '0.85rem',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.6rem'
-        }}>
-          <AlertCircle size={16} style={{ flexShrink: 0 }} />
+        <div className="profile-error-alert animate-fade-in">
+          <AlertCircle size={16} className="error-icon" />
           <span>{error}</span>
         </div>
       )}
 
       {/* Hero Overview Banner */}
-      <div style={{
-        background: 'var(--bg-secondary)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 'var(--radius-lg)',
-        padding: '1.5rem',
-        marginBottom: '1.75rem',
-        boxShadow: 'var(--shadow-card)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '1.25rem'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-          {/* Avatar Ring */}
-          <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #e05a2b 0%, #d9653b 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '1.4rem',
-            fontWeight: 800,
-            color: '#ffffff',
-            boxShadow: '0 4px 14px rgba(217, 101, 59, 0.3)',
-            border: '2px solid var(--bg-secondary)',
-            flexShrink: 0
-          }}>
-            {initials}
+      <div className="profile-hero-card">
+        <div className="profile-hero-left">
+          <div className="hero-avatar-squircle">
+            <span className="hero-avatar-initials">{initials}</span>
+            <span className="hero-status-beacon" />
           </div>
 
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.25rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                {name || 'Candidate Profile'}
-              </h2>
-              <span style={{
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                color: 'var(--badge-emerald-text)',
-                background: 'var(--badge-emerald-bg)',
-                border: '1px solid var(--badge-emerald-border)',
-                padding: '0.15rem 0.5rem',
-                borderRadius: '12px'
-              }}>
-                Active Candidate
+          <div className="hero-info-content">
+            <h2 className="hero-name">{name || 'Candidate Profile'}</h2>
+            <div className="hero-meta-badges">
+              <span className="hero-meta-badge hero-meta-badge-accent">
+                <Briefcase size={13} /> {role || 'Specify Target Role'}
               </span>
-            </div>
-            <div style={{ fontSize: '0.9rem', color: 'var(--accent-gold)', fontWeight: 600 }}>
-              {role || 'Specify Target Role'} • {location || 'India'}
+              <span className="hero-meta-badge">
+                <MapPin size={13} /> {location || 'India'}
+              </span>
+              <span className="hero-meta-badge hero-meta-badge-accent">
+                <Clock size={13} /> {jobType}
+              </span>
+              <span className="hero-meta-badge">
+                <Award size={13} /> Active Searcher
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Quick Info Tags */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-          <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.75rem', fontSize: '0.78rem' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>Notice Period</span>
-            <strong style={{ color: 'var(--badge-amber-text)' }}>{noticePeriod}</strong>
+        {/* Quick Info Bento Tiles */}
+        <div className="hero-metrics-bento">
+          <div className="hero-bento-tile">
+            <span className="tile-label">Job Type</span>
+            <span className="tile-value terra">{jobType}</span>
           </div>
-          <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.75rem', fontSize: '0.78rem' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>Expected CTC</span>
-            <strong style={{ color: 'var(--badge-emerald-text)' }}>{expectedCtc || 'Not specified'}</strong>
+          <div className="hero-bento-tile">
+            <span className="tile-label">Notice Period</span>
+            <span className="tile-value amber">{noticePeriod}</span>
           </div>
-          <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.75rem', fontSize: '0.78rem' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>Company Type</span>
-            <strong style={{ color: 'var(--badge-blue-text)' }}>{companyType}</strong>
+          <div className="hero-bento-tile">
+            <span className="tile-label">Expected CTC</span>
+            <span className="tile-value emerald">{expectedCtc || 'Flexible'}</span>
           </div>
-          <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.45rem 0.75rem', fontSize: '0.78rem' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>Seniority</span>
-            <strong style={{ color: 'var(--text-primary)' }}>{seniority.toUpperCase()}</strong>
+          <div className="hero-bento-tile">
+            <span className="tile-label">Company Type</span>
+            <span className="tile-value blue">{companyType}</span>
+          </div>
+          <div className="hero-bento-tile">
+            <span className="tile-label">Seniority</span>
+            <span className="tile-value mono">{seniority.toUpperCase()}</span>
           </div>
         </div>
       </div>
 
       {/* Main Grid: 2 Columns */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: '1.5rem', alignItems: 'start' }}>
+      <div className="profile-grid-layout">
         
         {/* Column 1: Career & Target Preferences Form */}
-        <div style={{
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '1.5rem',
-          boxShadow: 'var(--shadow-card)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
-            <Briefcase size={18} color="var(--accent-gold)" />
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Target Job Preferences</h3>
+        <div className="profile-card-section">
+          <div className="card-section-header">
+            <Briefcase size={18} className="text-terracotta" />
+            <h3 className="card-section-title">Target Job Preferences</h3>
           </div>
 
-          <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form onSubmit={handleSaveProfile} className="profile-form-body">
             {/* Candidate Full Name */}
             <div className="form-group">
-              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                Candidate Full Name <span style={{ color: '#ef4444' }}>*</span>
+              <label className="form-label">
+                Candidate Full Name <span className="text-danger">*</span>
               </label>
               <input
                 type="text"
@@ -416,16 +350,16 @@ export default function ProfileView({ onProfileUpdated }) {
                 onChange={handleFieldChange(setName)}
                 required
               />
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              <span className="form-helper-note">
                 Used in tailored application letters, resumes, and form submissions.
               </span>
             </div>
 
             {/* Target Role & Target Location */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            <div className="form-grid-2col">
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                  Target Role / Title <span style={{ color: '#ef4444' }}>*</span>
+                <label className="form-label">
+                  Target Role / Title <span className="text-danger">*</span>
                 </label>
                 <input
                   type="text"
@@ -438,7 +372,7 @@ export default function ProfileView({ onProfileUpdated }) {
               </div>
 
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
+                <label className="form-label">
                   Target Location
                 </label>
                 <input
@@ -451,62 +385,25 @@ export default function ProfileView({ onProfileUpdated }) {
               </div>
             </div>
 
-            {/* Notice Period & Expected CTC */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            {/* Job Type & Seniority Level */}
+            <div className="form-grid-2col">
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                  Notice Period
-                </label>
+                <label className="form-label">Job Type / Commitment</label>
                 <select
                   className="form-select"
-                  value={noticePeriod}
-                  onChange={handleFieldChange(setNoticePeriod)}
+                  value={jobType}
+                  onChange={handleFieldChange(setJobType)}
                 >
-                  <option value="Immediate">Immediate (0 Days)</option>
-                  <option value="15 Days">15 Days</option>
-                  <option value="30 Days">30 Days (1 Month)</option>
-                  <option value="60 Days">60 Days (2 Months)</option>
-                  <option value="90 Days">90 Days (3 Months)</option>
+                  <option value="Full-time">Full-time</option>
+                  <option value="Part-time">Part-time</option>
+                  <option value="Contract">Contract / Freelance</option>
+                  <option value="Internship">Internship</option>
+                  <option value="Any">Any (Full-time & Part-time)</option>
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                  Expected CTC (LPA / USD)
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. 18-25 LPA or $120k"
-                  value={expectedCtc}
-                  onChange={handleFieldChange(setExpectedCtc)}
-                />
-              </div>
-            </div>
-
-            {/* Company Type & Seniority Level */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-              <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                  Company Type
-                </label>
-                <select
-                  className="form-select"
-                  value={companyType}
-                  onChange={handleFieldChange(setCompanyType)}
-                >
-                  <option value="Product-based">Product-based</option>
-                  <option value="Startup">Startup (Funded)</option>
-                  <option value="MNC">Global MNC</option>
-                  <option value="Service-based">Service-based</option>
-                  <option value="Any">Any Company Type</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 600 }}>
-                  Seniority Level
-                </label>
+                <label className="form-label">Seniority Level</label>
                 <select
                   className="form-select"
                   value={seniority}
@@ -521,16 +418,59 @@ export default function ProfileView({ onProfileUpdated }) {
               </div>
             </div>
 
-            {/* Contact Details Header */}
-            <div style={{ marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-subtle)' }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
-                Contact & Professional Links
-              </span>
+            {/* Notice Period & Expected CTC */}
+            <div className="form-grid-2col">
+              <div className="form-group">
+                <label className="form-label">Notice Period</label>
+                <select
+                  className="form-select"
+                  value={noticePeriod}
+                  onChange={handleFieldChange(setNoticePeriod)}
+                >
+                  <option value="Immediate">Immediate (0 Days)</option>
+                  <option value="15 Days">15 Days</option>
+                  <option value="30 Days">30 Days (1 Month)</option>
+                  <option value="60 Days">60 Days (2 Months)</option>
+                  <option value="90 Days">90 Days (3 Months)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Expected CTC (LPA / USD)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. 18-25 LPA or $120k"
+                  value={expectedCtc}
+                  onChange={handleFieldChange(setExpectedCtc)}
+                />
+              </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            {/* Company Type Preference */}
+            <div className="form-group">
+              <label className="form-label">Target Company Ecosystem</label>
+              <select
+                className="form-select"
+                value={companyType}
+                onChange={handleFieldChange(setCompanyType)}
+              >
+                <option value="Product-based">Product-based Companies & Tech Tier 1</option>
+                <option value="Startup">Early & Growth-stage Startups (Funded)</option>
+                <option value="MNC">Global MNC & Enterprise Tech</option>
+                <option value="Service-based">IT Services & Consulting</option>
+                <option value="Any">Any Company Type</option>
+              </select>
+            </div>
+
+            {/* Contact Details Header */}
+            <div className="form-divider-title">
+              Contact & Professional Links
+            </div>
+
+            <div className="form-grid-2col">
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.8rem' }}>Email Address</label>
+                <label className="form-label">Email Address</label>
                 <input
                   type="email"
                   className="form-input"
@@ -541,7 +481,7 @@ export default function ProfileView({ onProfileUpdated }) {
               </div>
 
               <div className="form-group">
-                <label className="form-label" style={{ fontSize: '0.8rem' }}>Phone Number</label>
+                <label className="form-label">Phone Number</label>
                 <input
                   type="tel"
                   className="form-input"
@@ -553,7 +493,7 @@ export default function ProfileView({ onProfileUpdated }) {
             </div>
 
             <div className="form-group">
-              <label className="form-label" style={{ fontSize: '0.8rem' }}>LinkedIn Profile URL</label>
+              <label className="form-label">LinkedIn Profile URL</label>
               <input
                 type="url"
                 className="form-input"
@@ -563,88 +503,64 @@ export default function ProfileView({ onProfileUpdated }) {
               />
             </div>
 
-            <div style={{ marginTop: '0.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="form-submit-row">
               <button
                 type="submit"
                 className="btn-primary"
                 disabled={saving}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
               >
-                {saving ? <RefreshCw size={14} className="spin" /> : <CheckCircle size={14} />}
-                <span>Save Changes</span>
+                {saving ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                <span>Save Profile Criteria</span>
               </button>
             </div>
           </form>
         </div>
 
         {/* Column 2: Resume & Document Vault */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div className="profile-sidebar-column">
           
-          <div style={{
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '1.5rem',
-            boxShadow: 'var(--shadow-card)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FileText size={18} color="var(--accent-gold)" />
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Candidate Resume Vault</h3>
+          <div className="profile-card-section">
+            <div className="card-section-header flex-between">
+              <div className="section-title-wrap">
+                <FileText size={18} className="text-terracotta" />
+                <h3 className="card-section-title">Candidate Resume Vault</h3>
               </div>
-              <span style={{ fontSize: '0.75rem', color: resumeText ? 'var(--badge-emerald-text)' : 'var(--badge-amber-text)', background: resumeText ? 'var(--badge-emerald-bg)' : 'var(--badge-amber-bg)', border: '1px solid ' + (resumeText ? 'var(--badge-emerald-border)' : 'var(--badge-amber-border)'), padding: '0.2rem 0.5rem', borderRadius: '10px', fontWeight: 600 }}>
+              <span className={`vault-status-badge ${resumeText ? 'active' : 'empty'}`}>
                 {resumeText ? '✓ Active Resume' : '⚠️ No Resume'}
               </span>
             </div>
 
             {/* Active Resume Card */}
             {resumeText ? (
-              <div style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md)',
-                padding: '1.15rem',
-                marginBottom: '1rem',
-                position: 'relative'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
-                  <div style={{
-                    background: 'var(--accent-bg)',
-                    border: '1px solid var(--border-focus)',
-                    padding: '0.65rem',
-                    borderRadius: 'var(--radius-md)',
-                    color: 'var(--accent-gold)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <FileText size={24} />
+              <div className="resume-active-file-card">
+                <div className="resume-file-identity">
+                  <div className="resume-file-icon-wrap">
+                    <FileText size={22} />
                   </div>
 
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h4 style={{ fontSize: '0.92rem', fontWeight: 600, margin: '0 0 0.2rem 0', color: 'var(--text-primary)', wordBreak: 'break-all' }}>
+                  <div className="resume-file-details">
+                    <h4 className="resume-file-name">
                       {resumeFilename || (resumeFilePath ? resumeFilePath.split('/').pop() : 'Candidate_Resume.pdf')}
                     </h4>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Updated: {formatUploadDate(resumeUploadedAt)} • {resumeText.length.toLocaleString()} characters parsed
+                    <span className="resume-file-meta">
+                      Updated {formatUploadDate(resumeUploadedAt)} • {resumeText.length.toLocaleString()} characters parsed
                     </span>
                   </div>
                 </div>
 
                 {/* Resume Actions Bar */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-subtle)' }}>
+                <div className="resume-actions-row">
                   <a
                     href={getResumeDownloadUrl()}
                     download
-                    className="btn-secondary"
-                    style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem', textDecoration: 'none', padding: '0.35rem 0.7rem' }}
+                    className="btn-secondary btn-sm"
                     title="Download active resume"
                   >
                     <Download size={13} />
                     <span>Download</span>
                   </a>
 
-                  <label className="btn-secondary" style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', padding: '0.35rem 0.7rem', margin: 0 }}>
+                  <label className="btn-secondary btn-sm btn-upload-label">
                     <Upload size={13} />
                     <span>{uploading ? 'Processing...' : 'Replace Resume'}</span>
                     <input type="file" accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg,.webp" onChange={handleFileUpload} disabled={uploading} style={{ display: 'none' }} />
@@ -652,9 +568,8 @@ export default function ProfileView({ onProfileUpdated }) {
 
                   <button
                     type="button"
-                    className="btn-danger-outline"
+                    className="btn-danger-outline btn-sm ml-auto"
                     onClick={handleDeleteResume}
-                    style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.35rem 0.7rem', marginLeft: 'auto' }}
                     title="Remove resume from profile"
                   >
                     <Trash2 size={13} />
@@ -664,24 +579,14 @@ export default function ProfileView({ onProfileUpdated }) {
               </div>
             ) : (
               /* Drag & Drop Upload Zone */
-              <label style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '2rem 1.5rem',
-                border: '2px dashed var(--border-subtle)',
-                borderRadius: 'var(--radius-md)',
-                cursor: 'pointer',
-                background: 'var(--bg-tertiary)',
-                transition: 'border 0.2s, background 0.2s',
-                marginBottom: '1rem'
-              }}>
-                <Upload size={32} color="var(--accent-gold)" style={{ marginBottom: '0.65rem' }} />
-                <span style={{ fontWeight: 600, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+              <label className="resume-dropzone">
+                <div className="dropzone-icon-wrap">
+                  <Upload size={28} className="text-terracotta" />
+                </div>
+                <span className="dropzone-title">
                   {uploading ? 'Parsing resume text & skills...' : 'Click or drag Resume (PDF, DOCX, Images) here'}
                 </span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', textAlign: 'center' }}>
+                <span className="dropzone-sub">
                   Supports all PDF (digital & scanned), DOCX, TXT, Images up to 15MB
                 </span>
                 <input type="file" accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg,.webp" onChange={handleFileUpload} disabled={uploading} style={{ display: 'none' }} />
@@ -690,27 +595,16 @@ export default function ProfileView({ onProfileUpdated }) {
 
             {/* Extracted Skills Cloud */}
             {skills && skills.length > 0 && (
-              <div style={{ marginTop: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.6rem' }}>
-                  <Sparkles size={14} color="var(--accent-gold)" />
-                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              <div className="skills-cloud-wrap">
+                <div className="skills-cloud-header">
+                  <Sparkles size={14} className="text-terracotta" />
+                  <span className="skills-cloud-title">
                     Extracted Skills & Competencies ({skills.length})
                   </span>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', maxHeight: '120px', overflowY: 'auto' }}>
+                <div className="skills-tags-list">
                   {skills.map((skill, i) => (
-                    <span
-                      key={i}
-                      style={{
-                        background: 'var(--badge-blue-bg)',
-                        color: 'var(--badge-blue-text)',
-                        border: '1px solid var(--badge-blue-border)',
-                        padding: '0.2rem 0.55rem',
-                        borderRadius: '6px',
-                        fontSize: '0.72rem',
-                        fontWeight: 600
-                      }}
-                    >
+                    <span key={i} className="skill-pill">
                       {skill}
                     </span>
                   ))}
@@ -720,44 +614,25 @@ export default function ProfileView({ onProfileUpdated }) {
 
             {/* Extracted Resume Text Collapsible Accordion */}
             {resumeText && (
-              <div style={{ marginTop: '1.25rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-subtle)' }}>
+              <div className="resume-text-accordion">
                 <button
                   type="button"
+                  className="btn-accordion-toggle"
                   onClick={() => setShowRawText(!showRawText)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    padding: '0.25rem 0'
-                  }}
                 >
-                  <span style={{ fontWeight: 600 }}>Parsed Resume Plain Text Preview</span>
+                  <span>Parsed Resume Plain Text Preview</span>
                   {showRawText ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                 </button>
 
                 {showRawText && (
-                  <div style={{ marginTop: '0.6rem' }}>
+                  <div className="accordion-content-box animate-fade-in">
                     <textarea
-                      className="form-input"
+                      className="form-input resume-textarea-preview"
                       rows={8}
                       value={resumeText}
                       onChange={handleFieldChange(setResumeText)}
-                      style={{
-                        fontFamily: 'monospace',
-                        fontSize: '0.75rem',
-                        lineHeight: 1.45,
-                        background: 'var(--bg-primary)',
-                        color: 'var(--text-primary)',
-                        border: '1px solid var(--border-subtle)'
-                      }}
                     />
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                    <span className="form-helper-note">
                       You can make manual adjustments to the parsed resume text here if desired.
                     </span>
                   </div>
@@ -767,21 +642,15 @@ export default function ProfileView({ onProfileUpdated }) {
           </div>
 
           {/* Unified Integration Guarantee Info Box */}
-          <div style={{
-            background: 'var(--badge-emerald-bg)',
-            border: '1px solid var(--badge-emerald-border)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '1.25rem',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '0.85rem'
-          }}>
-            <ShieldCheck size={20} color="var(--badge-emerald-text)" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.8rem', color: 'var(--badge-emerald-text)', lineHeight: 1.5 }}>
-              <strong style={{ color: 'var(--badge-emerald-text)', display: 'block', marginBottom: '0.25rem' }}>
+          <div className="profile-trust-card">
+            <ShieldCheck size={20} className="trust-card-icon" />
+            <div className="trust-card-body">
+              <strong className="trust-card-title">
                 Profile-First Integration Active
               </strong>
-              All commands (<code>/job-skill search</code>, <code>/job-skill apply linkedin</code>, <code>/job-skill automate</code>) directly and exclusively source this candidate profile and resume. The system no longer reads random files from the uploads directory.
+              <p className="trust-card-text">
+                All commands (<code>/job-skill search</code>, <code>/job-skill apply linkedin</code>, <code>/job-skill automate</code>) directly and exclusively source this candidate profile and resume.
+              </p>
             </div>
           </div>
 

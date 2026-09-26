@@ -396,30 +396,11 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
         </div>
 
         {/* Top-Level Tabs Navigation */}
-        <div style={{
-          display: "flex",
-          gap: "0.5rem",
-          borderBottom: "1px solid var(--border-subtle)",
-          paddingBottom: "0.75rem",
-          marginBottom: "1.25rem",
-        }}>
+        <div className="modal-tab-bar">
           <button
             type="button"
+            className={`modal-tab-btn ${activeMainTab === "ai" ? "active" : ""}`}
             onClick={() => { setActiveMainTab("ai"); setError(""); setSuccessMsg(""); }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.45rem",
-              padding: "0.45rem 0.9rem",
-              borderRadius: "6px",
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              border: activeMainTab === "ai" ? "1px solid var(--accent-gold)" : "1px solid transparent",
-              background: activeMainTab === "ai" ? "var(--accent-bg)" : "transparent",
-              color: activeMainTab === "ai" ? "var(--accent-gold)" : "var(--text-muted)",
-              fontWeight: activeMainTab === "ai" ? 600 : 400,
-              transition: "all 0.2s ease",
-            }}
           >
             <Key size={15} />
             <span>AI & LLM Providers</span>
@@ -427,33 +408,13 @@ export default function SettingsModal({ isOpen, onClose, initialTab = "ai", them
 
           <button
             type="button"
+            className={`modal-tab-btn ${activeMainTab === "platforms" ? "active" : ""}`}
             onClick={() => { setActiveMainTab("platforms"); setLiError(""); setLiSuccess(""); }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.45rem",
-              padding: "0.45rem 0.9rem",
-              borderRadius: "6px",
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              border: activeMainTab === "platforms" ? "1px solid var(--accent-gold)" : "1px solid transparent",
-              background: activeMainTab === "platforms" ? "var(--accent-bg)" : "transparent",
-              color: activeMainTab === "platforms" ? "var(--accent-gold)" : "var(--text-muted)",
-              fontWeight: activeMainTab === "platforms" ? 600 : 400,
-              transition: "all 0.2s ease",
-            }}
           >
             <ShieldCheck size={15} />
             <span>Platform Credentials</span>
             {(linkedinInfo?.has_credentials || indeedInfo?.has_credentials || seekInfo?.has_credentials) && (
-              <span style={{
-                background: "var(--badge-emerald-bg)",
-                color: "var(--badge-emerald-text)",
-                borderRadius: "10px",
-                padding: "0.1rem 0.45rem",
-                fontSize: "0.7rem",
-                fontWeight: 700,
-              }}>
+              <span className="badge-saved" style={{ padding: "0.15rem 0.5rem", fontSize: "0.68rem" }}>
                 {(linkedinInfo?.has_credentials ? 1 : 0) + (indeedInfo?.has_credentials ? 1 : 0) + (seekInfo?.has_credentials ? 1 : 0)} Connected
               </span>
             )}

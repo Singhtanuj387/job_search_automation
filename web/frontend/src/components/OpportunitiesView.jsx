@@ -393,24 +393,43 @@ export default function OpportunitiesView({ onOpenChat = null }) {
 
         {filteredOpportunities.length === 0 ? (
           <div className="opp-empty-state">
-            <Compass size={36} color="var(--accent-gold)" style={{ opacity: 0.6, marginBottom: "0.75rem" }} />
-            <h3 style={{ fontSize: "1rem", color: "var(--text-primary)", marginBottom: "0.3rem" }}>
-              No matching job opportunities found
+            <div className="opp-empty-icon-wrap">
+              <Compass size={32} className="text-terracotta" />
+            </div>
+            <h3 className="opp-empty-title">
+              {opportunities.length === 0
+                ? "No job opportunities cataloged yet"
+                : "No matching job opportunities found"}
             </h3>
-            <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
-              Try adjusting your search keyword, platform filter, or score thresholds.
+            <p className="opp-empty-subtitle">
+              {opportunities.length === 0
+                ? "Launch your first multi-platform search to spider 18+ verified networks and aggregate matching positions."
+                : "Try adjusting your search keyword, platform filter, or minimum score thresholds."}
             </p>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedPlatform('all');
-                setMinScoreFilter('all');
-              }}
-            >
-              Reset Filters
-            </button>
+            {opportunities.length === 0 ? (
+              onOpenChat && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={onOpenChat}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.55rem 1.1rem" }}
+                >
+                  <Search size={15} /> Launch Career Search
+                </button>
+              )
+            ) : (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedPlatform('all');
+                  setMinScoreFilter('all');
+                }}
+              >
+                Reset All Filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="job-table-scroll-container">

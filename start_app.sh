@@ -22,8 +22,10 @@ else
     PYTHON="python3"
 fi
 
-# Auto-open browser in background if a desktop display exists
-(sleep 2 && (xdg-open "http://127.0.0.1:8000" 2>/dev/null || open "http://127.0.0.1:8000" 2>/dev/null || true)) &
+# Auto-open browser only if explicitly enabled (default is silent/background)
+if [ "${OPEN_BROWSER:-0}" = "1" ]; then
+    (sleep 2 && (xdg-open "http://127.0.0.1:8000" 2>/dev/null || open "http://127.0.0.1:8000" 2>/dev/null || true)) &
+fi
 
 echo ""
 echo "======================================================="

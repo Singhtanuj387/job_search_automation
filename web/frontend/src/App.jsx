@@ -154,10 +154,14 @@ export default function App() {
       <aside className="sidebar">
         {/* Brand Header */}
         <div className="sidebar-brand">
-          <div className="brand-logo">
-            <Compass size={20} color="var(--accent-gold)" />
-            <span className="brand-title">Navigator</span>
-            <span className="badge-pro">PRO</span>
+          <div className="brand-logo" onClick={() => setActiveTab('chat')} style={{ cursor: 'pointer' }}>
+            <div className="brand-icon-wrapper">
+              <Compass size={18} strokeWidth={2.2} className="brand-icon" />
+            </div>
+            <div className="brand-text-block">
+              <span className="brand-title">Get me job</span>
+              <span className="badge-pro">PRO</span>
+            </div>
           </div>
           <button
             type="button"
@@ -173,7 +177,7 @@ export default function App() {
         {/* New Search Action */}
         <div className="sidebar-action">
           <button className="btn-new-search" onClick={handleNewSession}>
-            <Plus size={16} />
+            <Plus size={16} strokeWidth={2.5} />
             <span>New Search</span>
           </button>
         </div>
@@ -181,38 +185,56 @@ export default function App() {
         {/* Primary Navigation */}
         <div className="nav-section">
           <button
-            className={`nav-button ${activeTab === 'tracker' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tracker')}
+            className={`nav-button ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('chat')}
           >
-            <Briefcase size={17} strokeWidth={2} />
-            <span>Application Tracker</span>
+            <div className="nav-icon-box">
+              <Search size={16} strokeWidth={2} />
+            </div>
+            <span className="nav-label">Career Copilot</span>
           </button>
 
           <button
             className={`nav-button ${activeTab === 'opportunities' ? 'active' : ''}`}
             onClick={() => setActiveTab('opportunities')}
           >
-            <Compass size={17} strokeWidth={2} />
-            <span>Total Job Opportunities</span>
+            <div className="nav-icon-box">
+              <Compass size={16} strokeWidth={2} />
+            </div>
+            <span className="nav-label">Job Opportunities</span>
             {opportunitiesCount > 0 && (
               <span className="nav-count-pill">{opportunitiesCount}</span>
             )}
           </button>
 
           <button
+            className={`nav-button ${activeTab === 'tracker' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tracker')}
+          >
+            <div className="nav-icon-box">
+              <Briefcase size={16} strokeWidth={2} />
+            </div>
+            <span className="nav-label">Pipeline Tracker</span>
+          </button>
+
+          <button
             className={`nav-button ${activeTab === 'profile' ? 'active' : ''}`}
             onClick={() => setActiveTab('profile')}
           >
-            <UserCheck size={17} strokeWidth={2} />
-            <span>Candidate Profile</span>
+            <div className="nav-icon-box">
+              <UserCheck size={16} strokeWidth={2} />
+            </div>
+            <span className="nav-label">Candidate Profile</span>
           </button>
 
           <button
             className="nav-button"
             onClick={() => setIsAutomateOpen(true)}
           >
-            <Clock size={17} strokeWidth={2} />
-            <span>Nightly Automate</span>
+            <div className="nav-icon-box">
+              <Clock size={16} strokeWidth={2} />
+            </div>
+            <span className="nav-label">Nightly Automate</span>
           </button>
 
           <button
@@ -222,12 +244,14 @@ export default function App() {
               setIsSettingsOpen(true);
             }}
           >
-            <Settings size={17} strokeWidth={2} />
-            <span>Settings & Vault</span>
+            <div className="nav-icon-box">
+              <Settings size={16} strokeWidth={2} />
+            </div>
+            <span className="nav-label">Settings & Vault</span>
           </button>
         </div>
 
-        {/* Claude-Style Recent Chats & Search History */}
+        {/* Recent Searches History */}
         <div className="sidebar-history-section">
           <div className="history-section-header">
             <span className="history-label">Recent Searches</span>
@@ -255,6 +279,7 @@ export default function App() {
                     </div>
 
                     <button
+                      type="button"
                       className="btn-delete-session"
                       onClick={(e) => handleDeleteSession(e, sess.id)}
                       title="Delete chat session"
@@ -268,22 +293,29 @@ export default function App() {
           </div>
         </div>
 
-        {/* Profile Badge */}
+        {/* Profile Card */}
         <div className="sidebar-profile">
           <div
             className={`profile-card ${activeTab === 'profile' ? 'active' : ''}`}
             onClick={() => setActiveTab('profile')}
             title="Click to view & edit Candidate Profile"
-            style={{ cursor: 'pointer' }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span className="profile-role">{profile?.role || "Set Target Role"}</span>
-              <UserCheck size={14} color="var(--accent-gold)" />
+            <div className="profile-card-header">
+              <div className="profile-avatar-squircle">
+                {profile?.name ? profile.name.trim().charAt(0).toUpperCase() : 'C'}
+              </div>
+              <div className="profile-info-block">
+                <div className="profile-name-row">
+                  <span className="profile-name-text">{profile?.name || "Active Candidate"}</span>
+                  <span className="profile-status-dot" title="Ready to auto-apply"></span>
+                </div>
+                <span className="profile-role-text">{profile?.role || "Set Target Role"}</span>
+              </div>
             </div>
-            <div className="profile-meta">
-              <span>{profile?.location || "Any location"}</span>
-              <span>•</span>
-              <span>{profile?.seniority?.toUpperCase() || "MID"}</span>
+            <div className="profile-meta-tags">
+              <span className="profile-tag-pill">{profile?.location || "Any Location"}</span>
+              <span className="profile-tag-pill">{profile?.job_type || "Full-time"}</span>
+              <span className="profile-tag-pill highlight">{profile?.seniority?.toUpperCase() || "MID"}</span>
             </div>
           </div>
         </div>
