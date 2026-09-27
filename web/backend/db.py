@@ -283,10 +283,32 @@ class AppDatabase:
                 )
             """)
 
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS tailored_resumes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL DEFAULT 'default',
+                    opportunity_id INTEGER,
+                    job_id TEXT NOT NULL DEFAULT '',
+                    company TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    original_resume_path TEXT NOT NULL DEFAULT '',
+                    tailored_docx_path TEXT NOT NULL DEFAULT '',
+                    tailored_data_json TEXT NOT NULL DEFAULT '{}',
+                    keyword_analysis_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            c.execute("CREATE INDEX IF NOT EXISTS idx_tailored_sess ON tailored_resumes(session_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_tailored_job ON tailored_resumes(job_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_tailored_opp ON tailored_resumes(opportunity_id)")
+
             for alter_sql in [
                 "ALTER TABLE chat_sessions ADD COLUMN client_id TEXT DEFAULT 'default'",
                 "ALTER TABLE tracker ADD COLUMN client_id TEXT DEFAULT 'default'",
                 "ALTER TABLE job_opportunities ADD COLUMN client_id TEXT DEFAULT 'default'",
+                "ALTER TABLE job_opportunities ADD COLUMN tailored_resume_path TEXT DEFAULT ''",
+                "ALTER TABLE job_opportunities ADD COLUMN tailored_resume_id INTEGER DEFAULT 0",
                 "ALTER TABLE apply_sessions ADD COLUMN client_id TEXT DEFAULT 'default'",
             ]:
                 try:
@@ -1926,3 +1948,224 @@ class AppDatabase:
                     item["tailored_bullets"] = []
                 results.append(item)
             return results
+
+    # ------------------ TAILORED RESUMES ------------------
+    def save_tailored_resume(
+        self,
+        session_id: str,
+        job_id: str,
+        company: str,
+        title: str,
+        original_resume_path: str,
+        tailored_docx_path: str,
+        tailored_data: Dict[str, Any],
+        keyword_analysis: Dict[str, Any],
+        opportunity_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Saves or updates a tailored resume record for a specific job/opportunity and session.
+        Also syncs tailored_resume_path onto job_opportunities if opportunity_id is provided.
+        """
+        clean_sess = (session_id or "default").strip()
+        now = datetime.now(timezone.utc).isoformat()
+        t_json = json.dumps(tailored_data, default=str)
+        k_json = json.dumps(keyword_analysis, default=str)
+
+        with self._get_connection() as conn:
+            # Check if one already exists for this session and job_id / opportunity_id
+            existing = None
+            if opportunity_id:
+                existing = conn.execute(
+                    "SELECT id FROM tailored_resumes WHERE session_id = ? AND opportunity_id = ?",
+                    (clean_sess, opportunity_id)
+                ).fetchone()
+            if not existing and job_id:
+                existing = conn.execute(
+                    "SELECT id FROM tailored_resumes WHERE session_id = ? AND job_id = ?",
+                    (clean_sess, job_id)
+                ).fetchone()
+
+            if existing:
+                record_id = existing["id"]
+                conn.execute(
+                    """
+                    UPDATE tailored_resumes SET
+                        opportunity_id = COALESCE(?, opportunity_id),
+                        job_id = COALESCE(?, job_id),
+                        company = ?,
+                        title = ?,
+                        original_resume_path = ?,
+                        tailored_docx_path = ?,
+                        tailored_data_json = ?,
+                        keyword_analysis_json = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        opportunity_id,
+                        job_id,
+                        company,
+                        title,
+                        original_resume_path,
+                        tailored_docx_path,
+                        t_json,
+                        k_json,
+                        now,
+                        record_id,
+                    )
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO tailored_resumes (
+                        session_id, opportunity_id, job_id, company, title,
+                        original_resume_path, tailored_docx_path,
+                        tailored_data_json, keyword_analysis_json,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        clean_sess,
+                        opportunity_id,
+                        job_id,
+                        company,
+                        title,
+                        original_resume_path,
+                        tailored_docx_path,
+                        t_json,
+                        k_json,
+                        now,
+                        now,
+                    )
+                )
+                record_id = cur.lastrowid
+
+            # Sync to job_opportunities if opportunity_id provided
+            if opportunity_id:
+                conn.execute(
+                    """
+                    UPDATE job_opportunities
+                    SET tailored_resume_path = ?, tailored_resume_id = ?
+                    WHERE id = ?
+                    """,
+                    (tailored_docx_path, record_id, opportunity_id)
+                )
+            elif job_id:
+                conn.execute(
+                    """
+                    UPDATE job_opportunities
+                    SET tailored_resume_path = ?, tailored_resume_id = ?
+                    WHERE source_job_id = ?
+                    """,
+                    (tailored_docx_path, record_id, job_id)
+                )
+
+        return self.get_tailored_resume_by_id(record_id)
+
+    def get_tailored_resume_by_id(self, record_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves a single tailored resume by its primary ID."""
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM tailored_resumes WHERE id = ?", (record_id,)).fetchone()
+            if not row:
+                return None
+            item = dict(row)
+            try:
+                item["tailored_data"] = json.loads(item.get("tailored_data_json") or "{}")
+            except Exception:
+                item["tailored_data"] = {}
+            try:
+                item["keyword_analysis"] = json.loads(item.get("keyword_analysis_json") or "{}")
+            except Exception:
+                item["keyword_analysis"] = {}
+            return item
+
+    def get_tailored_resume_for_job(
+        self,
+        job_id: str = "",
+        opportunity_id: Optional[int] = None,
+        company: str = "",
+        title: str = "",
+        session_id: str = "default",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Finds a tailored resume for a specific job by opportunity_id, job_id, or company/title.
+        """
+        clean_sess = (session_id or "default").strip()
+        with self._get_connection() as conn:
+            row = None
+            if opportunity_id:
+                row = conn.execute(
+                    "SELECT * FROM tailored_resumes WHERE session_id = ? AND opportunity_id = ? ORDER BY updated_at DESC LIMIT 1",
+                    (clean_sess, opportunity_id)
+                ).fetchone()
+            if not row and job_id:
+                row = conn.execute(
+                    "SELECT * FROM tailored_resumes WHERE session_id = ? AND job_id = ? ORDER BY updated_at DESC LIMIT 1",
+                    (clean_sess, job_id)
+                ).fetchone()
+            if not row and company and title:
+                row = conn.execute(
+                    "SELECT * FROM tailored_resumes WHERE session_id = ? AND LOWER(company) = LOWER(?) AND LOWER(title) = LOWER(?) ORDER BY updated_at DESC LIMIT 1",
+                    (clean_sess, company, title)
+                ).fetchone()
+            if not row and clean_sess != "default":
+                # Fallback to default session
+                if opportunity_id:
+                    row = conn.execute(
+                        "SELECT * FROM tailored_resumes WHERE opportunity_id = ? ORDER BY updated_at DESC LIMIT 1",
+                        (opportunity_id,)
+                    ).fetchone()
+                elif job_id:
+                    row = conn.execute(
+                        "SELECT * FROM tailored_resumes WHERE job_id = ? ORDER BY updated_at DESC LIMIT 1",
+                        (job_id,)
+                    ).fetchone()
+
+            if not row:
+                return None
+
+            item = dict(row)
+            try:
+                item["tailored_data"] = json.loads(item.get("tailored_data_json") or "{}")
+            except Exception:
+                item["tailored_data"] = {}
+            try:
+                item["keyword_analysis"] = json.loads(item.get("keyword_analysis_json") or "{}")
+            except Exception:
+                item["keyword_analysis"] = {}
+            return item
+
+    def list_tailored_resumes(self, session_id: str = "default") -> List[Dict[str, Any]]:
+        """Lists all tailored resumes for a session."""
+        clean_sess = (session_id or "default").strip()
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tailored_resumes WHERE session_id = ? ORDER BY updated_at DESC",
+                (clean_sess,)
+            ).fetchall()
+            if not rows and clean_sess == "default":
+                rows = conn.execute("SELECT * FROM tailored_resumes ORDER BY updated_at DESC").fetchall()
+            results = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["tailored_data"] = json.loads(item.get("tailored_data_json") or "{}")
+                except Exception:
+                    item["tailored_data"] = {}
+                try:
+                    item["keyword_analysis"] = json.loads(item.get("keyword_analysis_json") or "{}")
+                except Exception:
+                    item["keyword_analysis"] = {}
+                results.append(item)
+            return results
+
+    def delete_tailored_resume(self, record_id: int, session_id: str = "default") -> bool:
+        """Deletes a tailored resume record."""
+        clean_sess = (session_id or "default").strip()
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                "DELETE FROM tailored_resumes WHERE id = ? AND session_id = ?",
+                (record_id, clean_sess)
+            )
+            return cur.rowcount > 0
+

@@ -2340,10 +2340,26 @@ class IndeedApplyAgent:
         try:
             file_input = frame.locator("input[type='file']").first
             if await self._is_visible(file_input, timeout=1000):
-                tailored_path = job.get("tailored_resume_path") or self.profile.get("resume_file_path")
+                tailored_path = job.get("tailored_resume_path")
+                if not tailored_path or not os.path.exists(tailored_path):
+                    try:
+                        from web.backend.db import AppDatabase
+                        db = AppDatabase()
+                        tailored_rec = db.get_tailored_resume_for_job(
+                            job_id=job.get("source_job_id") or str(job.get("id", "")),
+                            opportunity_id=job.get("id"),
+                            company=job.get("company", ""),
+                            title=job.get("title", ""),
+                        )
+                        if tailored_rec and tailored_rec.get("tailored_docx_path") and os.path.exists(tailored_rec["tailored_docx_path"]):
+                            tailored_path = tailored_rec["tailored_docx_path"]
+                    except Exception:
+                        pass
+                if not tailored_path or not os.path.exists(tailored_path):
+                    tailored_path = self.profile.get("resume_file_path")
                 if tailored_path and os.path.exists(tailored_path):
                     await file_input.set_input_files(tailored_path)
-                    logger.info(f"Uploaded resume file {tailored_path}")
+                    logger.info(f"Uploaded resume file ({Path(tailored_path).name}) to Indeed: {tailored_path}")
                     await self._human_delay(1.0, 2.0)
         except Exception:
             pass

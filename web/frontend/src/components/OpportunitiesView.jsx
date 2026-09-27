@@ -20,9 +20,12 @@ import {
   X,
   Trash2,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  FileCheck
 } from 'lucide-react';
 import { getOpportunities, getOpportunitiesStats, saveOpportunityToTracker, clearAllOpportunities } from '../api';
+import ResumeTailorModal from './ResumeTailorModal';
 
 const PLATFORM_META = {
   linkedin: { name: 'LinkedIn India', color: '#0a66c2', bg: 'rgba(10, 102, 194, 0.15)', tag: 'LI' },
@@ -61,6 +64,10 @@ export default function OpportunitiesView({ onOpenChat = null }) {
   // Saved Map for Tracker
   const [savedMap, setSavedMap] = useState({});
 
+  // Tailored Resume Map & Modal
+  const [tailorModalOpp, setTailorModalOpp] = useState(null);
+  const [tailoredMap, setTailoredMap] = useState({});
+
   // Clear Opportunities Modal
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -75,6 +82,15 @@ export default function OpportunitiesView({ onOpenChat = null }) {
       ]);
       setOpportunities(opps);
       setStats(st);
+
+      // Track existing tailored resumes
+      const tMap = {};
+      (opps || []).forEach(o => {
+        if (o.tailored_resume_path || o.tailored_resume_id) {
+          tMap[o.id] = o.tailored_resume_path || true;
+        }
+      });
+      setTailoredMap(tMap);
     } catch (err) {
       console.error("Failed to load opportunities:", err);
     } finally {
@@ -445,6 +461,7 @@ export default function OpportunitiesView({ onOpenChat = null }) {
                   <th style={{ minWidth: "95px" }}>Date</th>
                   <th style={{ minWidth: "155px" }}>Fitness Score</th>
                   <th style={{ width: "110px", textAlign: "center" }}>Direct Apply</th>
+                  <th style={{ width: "125px", textAlign: "center" }}>Tailor Resume</th>
                   <th style={{ width: "80px", textAlign: "center" }}>Track</th>
                 </tr>
               </thead>
@@ -543,6 +560,27 @@ export default function OpportunitiesView({ onOpenChat = null }) {
                         ) : (
                           <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>—</span>
                         )}
+                      </td>
+
+                      <td style={{ textAlign: "center" }}>
+                        <button
+                          type="button"
+                          className={`btn-table-action tailor ${tailoredMap[opp.id] || opp.tailored_resume_path ? 'tailored' : ''}`}
+                          onClick={() => setTailorModalOpp(opp)}
+                          title={tailoredMap[opp.id] || opp.tailored_resume_path ? "View tailored resume & ATS score" : "Tailor resume with AI for this opening"}
+                        >
+                          {tailoredMap[opp.id] || opp.tailored_resume_path ? (
+                            <>
+                              <CheckCircle2 size={12} color="#10b981" />
+                              <span style={{ color: "#10b981", fontWeight: 600 }}>Tailored</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={12} />
+                              <span>Tailor</span>
+                            </>
+                          )}
+                        </button>
                       </td>
 
                       <td style={{ textAlign: "center" }}>
@@ -717,6 +755,16 @@ export default function OpportunitiesView({ onOpenChat = null }) {
           </div>
         </div>
       )}
+
+      {/* Resume Tailor Modal */}
+      <ResumeTailorModal
+        isOpen={!!tailorModalOpp}
+        opportunity={tailorModalOpp}
+        onClose={() => setTailorModalOpp(null)}
+        onTailoredUpdated={(oppId, path) => {
+          setTailoredMap(prev => ({ ...prev, [oppId]: path || true }));
+        }}
+      />
     </div>
   );
 }

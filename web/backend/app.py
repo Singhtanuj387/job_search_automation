@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from web.backend.routes import apply, automate, chat, materials, opportunities, profile, settings, tracker
+from web.backend.routes import apply, automate, chat, materials, opportunities, profile, resume_tailor, settings, tracker
 from web.backend.scheduler import AutomateScheduler
 
 
@@ -36,6 +36,7 @@ app.add_middleware(
 
 # Register routes
 app.include_router(profile.router)
+app.include_router(resume_tailor.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(tracker.router)

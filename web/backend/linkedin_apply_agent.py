@@ -141,11 +141,34 @@ class LinkedInApplyAgent:
         except Exception:
             return None
 
-    def _resolve_profile_resume_path(self) -> Optional[str]:
+    def _resolve_profile_resume_path(self, job: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Resolves the candidate's resume strictly from the Profile section.
+        Prioritizes a job-specific tailored resume if available.
         Never scans arbitrary directories or the uploads folder.
         """
+        # 0. Check if a tailored resume exists for this specific job
+        if job:
+            tailored = job.get("tailored_resume_path")
+            if tailored and os.path.exists(tailored):
+                logger.info(f"Using tailored resume for job {job.get('id', '')}: {tailored}")
+                return os.path.abspath(tailored)
+
+            try:
+                from web.backend.db import AppDatabase
+                db = AppDatabase()
+                tailored_rec = db.get_tailored_resume_for_job(
+                    job_id=job.get("source_job_id") or str(job.get("id", "")),
+                    opportunity_id=job.get("id"),
+                    company=job.get("company", ""),
+                    title=job.get("title", ""),
+                )
+                if tailored_rec and tailored_rec.get("tailored_docx_path") and os.path.exists(tailored_rec["tailored_docx_path"]):
+                    logger.info(f"Resolved stored tailored resume for {job.get('company', '')}: {tailored_rec['tailored_docx_path']}")
+                    return os.path.abspath(tailored_rec["tailored_docx_path"])
+            except Exception as te:
+                logger.debug(f"Tailored resume lookup note: {te}")
+
         # 1. Check exact file path recorded in profile
         resume_file = self.profile.get("resume_file_path") or ""
         if resume_file and os.path.exists(resume_file):
@@ -617,13 +640,15 @@ class LinkedInApplyAgent:
             has_resume_card = form_modal.locator('text=".pdf", text=".doc", text=".docx"').first
 
             if (await upload_btn.count() > 0 and await upload_btn.is_visible()) and (await has_resume_card.count() == 0 or await resume_alert.count() > 0):
-                resume_file = self._resolve_profile_resume_path()
+                resume_file = self._resolve_profile_resume_path(job)
                 if resume_file and os.path.exists(resume_file):
                     try:
+                        is_tailored = "tailored" in Path(resume_file).name.lower()
+                        resume_label = "tailored resume" if is_tailored else "profile resume"
                         self._emit({
                             "type": "apply_job_progress",
                             "job_id": job.get("id"),
-                            "message": f"Uploading profile resume ({Path(resume_file).name}) for {company}...",
+                            "message": f"Uploading {resume_label} ({Path(resume_file).name}) for {company}...",
                         })
                         async with self.page.expect_file_chooser(timeout=5000) as fc_info:
                             await upload_btn.click()

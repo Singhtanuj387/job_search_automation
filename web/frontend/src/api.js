@@ -633,3 +633,64 @@ export async function testGemini(apiKey, modelId = "gemma-4-31b-it") {
   }
   return res.json();
 }
+
+// ------------------ RESUME TAILOR API ------------------
+
+export async function tailorResume({ jobId, jobTitle, company, jobDescription, opportunityId }) {
+  const res = await sessionFetch(`${API_BASE}/resume/tailor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      job_id: jobId,
+      job_title: jobTitle,
+      company: company,
+      job_description: jobDescription,
+      opportunity_id: opportunityId,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to tailor resume" }));
+    throw new Error(err.detail || "Failed to tailor resume");
+  }
+  return res.json();
+}
+
+export async function getTailoredResume(recordId) {
+  const res = await sessionFetch(`${API_BASE}/resume/tailored/${recordId}`);
+  if (!res.ok) {
+    throw new Error("Failed to load tailored resume");
+  }
+  return res.json();
+}
+
+export async function getTailoredResumeByJob({ jobId, opportunityId, company, title }) {
+  const params = new URLSearchParams();
+  if (jobId) params.set("job_id", jobId);
+  if (opportunityId) params.set("opportunity_id", opportunityId);
+  if (company) params.set("company", company);
+  if (title) params.set("title", title);
+
+  const res = await sessionFetch(`${API_BASE}/resume/tailored/by-job?${params.toString()}`);
+  if (!res.ok) {
+    return { has_tailored: false, tailored_resume: null };
+  }
+  return res.json();
+}
+
+export async function listTailoredResumes() {
+  const res = await sessionFetch(`${API_BASE}/resume/tailored`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function deleteTailoredResume(recordId) {
+  const res = await sessionFetch(`${API_BASE}/resume/tailored/${recordId}`, {
+    method: "DELETE",
+  });
+  return res.json();
+}
+
+export function getTailoredDownloadUrl(recordId) {
+  return `${API_BASE}/resume/tailored/${recordId}/download`;
+}
+

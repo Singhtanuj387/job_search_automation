@@ -5878,3 +5878,485 @@ input:focus, select:focus, textarea:focus {
     justify-content: space-between;
   }
 }
+
+/* ==========================================================================
+   Resume Tailor & ATS Optimizer Component Styles
+   ========================================================================== */
+
+.btn-table-action.tailor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.btn-table-action.tailor:hover {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-table-action.tailor.tailored {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.tailor-profile-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.95rem;
+  border-radius: 8px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  margin-bottom: 1rem;
+  font-size: 0.82rem;
+}
+
+.profile-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+}
+
+.profile-bar-candidate {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.tailor-badge-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.tailor-score-card {
+  display: grid;
+  grid-template-columns: 140px 100px 140px 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.15rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(10, 102, 194, 0.05) 100%);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  margin-bottom: 1.25rem;
+}
+
+.score-metric-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.score-metric-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.score-metric-value {
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.score-metric-value.original {
+  color: var(--text-secondary);
+}
+
+.score-metric-value.tailored {
+  color: #10b981;
+  text-shadow: 0 0 16px rgba(16, 185, 129, 0.3);
+}
+
+.score-metric-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.score-arrow-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.score-arrow-icon {
+  color: var(--text-muted);
+}
+
+.score-boost-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+  white-space: nowrap;
+}
+
+.score-cta-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.btn-tailor-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1.15rem;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 3px 12px -2px rgba(16, 185, 129, 0.4);
+}
+
+.btn-tailor-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 16px -2px rgba(16, 185, 129, 0.55);
+}
+
+.btn-tailor-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-tailor-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 7px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.btn-tailor-download:hover {
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.1));
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.keyword-matcher-section {
+  padding: 0.85rem 1rem;
+  border-radius: 9px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  margin-bottom: 1.25rem;
+}
+
+.keyword-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.45rem;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dot-emerald {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.dot-amber {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.keyword-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.kw-chip {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.kw-chip.matched {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.kw-chip.missing {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.kw-empty-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tailor-content-container {
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.02));
+  overflow: hidden;
+}
+
+.tailor-nav-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+}
+
+.tailor-tab-btn {
+  padding: 0.65rem 1.15rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.16s ease;
+}
+
+.tailor-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tailor-tab-btn.active {
+  color: #10b981;
+  border-bottom-color: #10b981;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
+  font-weight: 600;
+}
+
+.tailor-tab-panel {
+  padding: 1rem 1.25rem;
+}
+
+.block-action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.block-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.btn-copy-snippet {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.btn-copy-snippet:hover {
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+}
+
+.tailor-text-card {
+  padding: 0.95rem;
+  border-radius: 8px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.tailor-bullets-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.tailor-bullet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 7px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.bullet-point {
+  color: #10b981;
+  font-weight: bold;
+}
+
+.bullet-text {
+  flex: 1;
+}
+
+.btn-copy-single {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.15rem;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.btn-copy-single:hover {
+  color: var(--text-primary);
+}
+
+.categorized-skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+
+.skill-cat-card {
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+}
+
+.skill-cat-title {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.45rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.skill-cat-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.skill-pill {
+  display: inline-block;
+  padding: 0.18rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  background: rgba(10, 102, 194, 0.12);
+  color: var(--accent-gold, #0a66c2);
+  border: 1px solid rgba(10, 102, 194, 0.25);
+}
+
+.tailor-empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+}
+
+.placeholder-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 0.35rem 0;
+}
+
+.placeholder-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 480px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.tailor-alert.error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.95rem;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 768px) {
+  .tailor-score-card {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .score-arrow-box {
+    display: none;
+  }
+  .score-cta-box {
+    grid-column: span 2;
+    align-items: stretch;
+  }
+}
+

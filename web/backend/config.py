@@ -7,6 +7,7 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR / "data")))
 PROFILE_RESUMES_DIR = DATA_DIR / "profile_resumes"
+TAILORED_RESUMES_DIR = DATA_DIR / "tailored_resumes"
 UPLOADS_DIR = Path(os.environ.get("UPLOADS_DIR", str(BASE_DIR / "uploads")))
 APP_DB_PATH = DATA_DIR / "app.db"
 PHASE1_DB_PATH = DATA_DIR / "jobs.db"
@@ -14,6 +15,7 @@ MASTER_KEY_PATH = DATA_DIR / "master.key"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROFILE_RESUMES_DIR.mkdir(parents=True, exist_ok=True)
+TAILORED_RESUMES_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Master key for Fernet symmetric encryption of API keys & OAuth tokens

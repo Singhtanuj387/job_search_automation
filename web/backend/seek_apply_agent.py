@@ -247,10 +247,33 @@ class SeekApplyAgent:
         # 3. Explicit login submit button
         return await self._is_visible("button:has-text('Email me a sign in code')", timeout=600)
 
-    def _resolve_profile_resume_path(self) -> Optional[str]:
+    def _resolve_profile_resume_path(self, job: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Resolves the candidate's resume strictly from the Profile section.
+        Prioritizes a job-specific tailored resume if available.
         """
+        # 0. Check for tailored resume for this job
+        if job:
+            tailored = job.get("tailored_resume_path")
+            if tailored and os.path.exists(tailored):
+                logger.info(f"Using tailored resume for SEEK job {job.get('id', '')}: {tailored}")
+                return os.path.abspath(tailored)
+
+            try:
+                from web.backend.db import AppDatabase
+                db = AppDatabase()
+                tailored_rec = db.get_tailored_resume_for_job(
+                    job_id=job.get("source_job_id") or str(job.get("id", "")),
+                    opportunity_id=job.get("id"),
+                    company=job.get("company", ""),
+                    title=job.get("title", ""),
+                )
+                if tailored_rec and tailored_rec.get("tailored_docx_path") and os.path.exists(tailored_rec["tailored_docx_path"]):
+                    logger.info(f"Resolved stored tailored resume for SEEK {job.get('company', '')}: {tailored_rec['tailored_docx_path']}")
+                    return os.path.abspath(tailored_rec["tailored_docx_path"])
+            except Exception as te:
+                logger.debug(f"SEEK tailored resume lookup note: {te}")
+
         resume_file = self.profile.get("resume_file_path") or ""
         if resume_file and os.path.exists(resume_file):
             return os.path.abspath(resume_file)
@@ -2296,9 +2319,11 @@ for it in col.get_all_items():
                 # Fill / Upload Resume if prompted
                 file_input = self.page.locator("input[type='file']").first
                 if await self._is_visible(file_input, timeout=1000):
-                    resume_path = self._resolve_profile_resume_path()
+                    resume_path = self._resolve_profile_resume_path(job)
                     if resume_path and os.path.exists(resume_path):
                         try:
+                            is_tailored = "tailored" in Path(resume_path).name.lower()
+                            logger.info(f"Uploading {'tailored' if is_tailored else 'profile'} resume to SEEK: {resume_path}")
                             await file_input.set_input_files(resume_path)
                             await self._human_delay(1.0, 1.8)
                         except Exception:
