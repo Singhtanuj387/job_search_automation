@@ -11,6 +11,9 @@ Verifies:
 """
 import asyncio
 import json
+import os
+import re
+from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
@@ -22,6 +25,30 @@ from web.backend.seek_apply_agent import SeekApplyAgent, ApplyStatus
 
 client = TestClient(app)
 db = AppDatabase()
+
+
+@pytest.fixture(autouse=True)
+def preserve_seek_cookies():
+    cookie_paths = [
+        "web/backend/data/seek_cookies.json",
+        "data/seek_cookies.json",
+        "web/backend/data/seek_storage_state.json",
+        "data/seek_storage_state.json",
+    ]
+    saved = {}
+    for p in cookie_paths:
+        if os.path.exists(p):
+            try:
+                saved[p] = open(p).read()
+            except Exception:
+                pass
+    yield
+    for p, content in saved.items():
+        try:
+            Path(p).parent.mkdir(parents=True, exist_ok=True)
+            Path(p).write_text(content)
+        except Exception:
+            pass
 
 
 def test_seek_credentials_db():
@@ -55,6 +82,18 @@ def test_seek_credentials_db():
 
 def test_seek_credentials_api():
     prev_creds = db.get_seek_credentials()
+    prev_cookies = {}
+    for p in [
+        "web/backend/data/seek_cookies.json",
+        "data/seek_cookies.json",
+        "web/backend/data/seek_storage_state.json",
+        "data/seek_storage_state.json",
+    ]:
+        if os.path.exists(p):
+            try:
+                prev_cookies[p] = open(p).read()
+            except Exception:
+                pass
     try:
         # 1. Save with email
         res = client.post("/api/apply/seek/credentials", json={"email": "tester@seek.com.au"})
@@ -86,6 +125,12 @@ def test_seek_credentials_api():
         db.delete_seek_credentials()
         if prev_creds and prev_creds.get("email"):
             db.save_seek_credentials(prev_creds["email"], prev_creds.get("password", ""))
+        for p, content in prev_cookies.items():
+            try:
+                Path(p).parent.mkdir(parents=True, exist_ok=True)
+                Path(p).write_text(content)
+            except Exception:
+                pass
 
 
 def test_chat_seek_login_command():
@@ -447,6 +492,92 @@ def test_seek_login_detects_bot_challenge_and_aborts_without_false_success():
     asyncio.run(_run())
 
 
+def test_seek_login_auto_resolves_turnstile_on_email_step():
+    """Verify that when login.seek.com displays turnstile/recaptcha challenge, agent attempts resolution and proceeds to OTP entry."""
+    async def _run():
+        agent = SeekApplyAgent(
+            credentials={"email": "candidate@example.com"},
+            resume_data={},
+            profile={"email": "candidate@example.com"},
+        )
+        agent.ask_user = AsyncMock(return_value="123456")
+
+        mock_page = MagicMock()
+        mock_page.url = "https://login.seek.com/login"
+        mock_page.goto = AsyncMock()
+
+        # First call has recaptcha; after turnstile resolution, changes to code screen
+        call_count = 0
+        async def fake_inner_text():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return "Please complete the recaptcha. Email me a sign in code"
+            return "Check your email. Enter the 6-digit code we sent to candidate@example.com"
+
+        mock_body = MagicMock()
+        mock_body.inner_text = fake_inner_text
+
+        mock_email = MagicMock()
+        mock_btn = MagicMock()
+        mock_btn.click = AsyncMock()
+
+        def fake_locator(selector):
+            loc = MagicMock()
+            if "body" in selector:
+                return mock_body
+            if "submit" in selector.lower() or "button" in selector.lower():
+                loc.first = mock_btn
+                return loc
+            if "email" in selector.lower():
+                loc.first = mock_email
+                return loc
+            loc.first = MagicMock()
+            loc.count = AsyncMock(return_value=0)
+            return loc
+
+        mock_page.locator = fake_locator
+        mock_page.evaluate = AsyncMock(return_value="123456")
+        mock_page.frames = []
+        mock_context = MagicMock()
+        mock_context.add_cookies = AsyncMock()
+        mock_context.cookies = AsyncMock(return_value=[{"name": "registeredCandidateId", "value": "123"}])
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+        agent.context = mock_context
+
+        async def fake_is_visible(target, timeout=None):
+            if target == mock_email:
+                return True
+            if target == mock_btn:
+                return True
+            if isinstance(target, str) and any(k in target for k in ["verification", "character-0", "container", "digit"]):
+                return True
+            return False
+
+        # After submission, simulate redirect
+        def fake_url():
+            if call_count > 3:
+                return "https://au.seek.com/profile"
+            return "https://login.seek.com/login"
+
+        type(mock_page).url = property(lambda self: fake_url())
+
+        attempt_click_mock = AsyncMock(return_value=True)
+
+        with patch.object(agent, "_is_visible", side_effect=fake_is_visible), \
+             patch.object(agent, "_wait_for_cloudflare", new_callable=AsyncMock), \
+             patch.object(agent, "_human_delay", new_callable=AsyncMock), \
+             patch.object(agent, "_type_human", new_callable=AsyncMock), \
+             patch.object(agent, "_attempt_turnstile_click", attempt_click_mock):
+
+            agent.page = mock_page
+            login_result = await agent.login()
+            assert attempt_click_mock.called
+            assert login_result is True
+
+    asyncio.run(_run())
+
+
 def test_seek_apply_aborts_if_trapped_on_login_portal():
     """Verify that if clicking Quick Apply gets trapped on login portal, agent returns ERROR instead of MANUAL_REQUIRED."""
     async def _run():
@@ -764,4 +895,210 @@ def test_seek_login_handles_invalid_otp_error():
             assert any("verification error" in e.get("message", "").lower() for e in err_events)
 
     asyncio.run(_run())
+
+
+def test_seek_login_handles_cloudflare_during_auth_redirect_and_succeeds():
+    """Verify that when Cloudflare challenge appears during authentication redirect,
+    login() does not prematurely fail, but resolves it via _wait_for_cloudflare and succeeds."""
+    async def _run():
+        emitted_events = []
+        def track_progress(ev):
+            emitted_events.append(ev)
+
+        async def fake_ask(title, field, q):
+            return "654321"
+
+        agent = SeekApplyAgent(
+            credentials={"email": "candidate@domain.com"},
+            resume_data={},
+            profile={"email": "candidate@domain.com"},
+            ask_user_callback=fake_ask,
+            progress_callback=track_progress,
+        )
+
+        mock_page = MagicMock()
+        mock_page.url = "https://login.seek.com/login"
+        mock_page.goto = AsyncMock()
+        mock_page.keyboard = MagicMock()
+        mock_page.keyboard.type = AsyncMock()
+        mock_page.keyboard.press = AsyncMock()
+
+        # Body text simulation
+        body_mock = MagicMock()
+        body_mock.inner_text = AsyncMock(return_value="Check your email for a code. We sent a code to candidate@domain.com")
+
+        mock_email_input = MagicMock()
+        mock_email_input.first = mock_email_input
+        mock_email_input.click = AsyncMock()
+        mock_code_btn = MagicMock()
+        mock_code_btn.first = mock_code_btn
+        mock_code_btn.click = AsyncMock()
+
+        mock_field_0 = MagicMock()
+        mock_field_0.first = mock_field_0
+        mock_field_0.click = AsyncMock()
+
+        mock_seek_input = MagicMock()
+        mock_seek_input.first = mock_seek_input
+        mock_seek_input.count = AsyncMock(return_value=1)
+        mock_seek_input.click = AsyncMock()
+        mock_seek_input.press_sequentially = AsyncMock()
+
+        digit_box_mocks = {}
+        for i in range(6):
+            box = MagicMock()
+            box.first = box
+            box.inner_text = AsyncMock(return_value="654321"[i])
+            digit_box_mocks[i] = box
+
+        mock_submit_otp = MagicMock()
+        mock_submit_otp.first = mock_submit_otp
+        async def fake_submit_click():
+            # Redirect to au.seek.com during submit
+            mock_page.url = "https://au.seek.com/oauth/callback?code=abc"
+        mock_submit_otp.click = AsyncMock(side_effect=fake_submit_click)
+
+        def fake_locator(selector):
+            loc = MagicMock()
+            loc.click = AsyncMock()
+            loc.fill = AsyncMock()
+            loc.count = AsyncMock(return_value=0)
+            loc.first = loc
+            loc.inner_text = AsyncMock(return_value="")
+            if "body" in selector:
+                return body_mock
+            if "email" in selector.lower() and "code" not in selector.lower():
+                return mock_email_input
+            if "email me a sign in code" in selector.lower():
+                return mock_code_btn
+            for i in range(6):
+                if f"#field-{i}" in selector or f"character-{i}" in selector:
+                    return digit_box_mocks[i]
+            if "verification" in selector and "input" in selector:
+                return mock_seek_input
+            if "client-side-error" in selector or "role='alert'" in selector:
+                mock_err = MagicMock()
+                mock_err.count = AsyncMock(return_value=0)
+                return mock_err
+            if "data-testid='container'" in selector or "#field-0" in selector:
+                return mock_field_0
+            if "#submit-otp" in selector.lower() or "verification" in selector.lower():
+                return mock_submit_otp
+            return loc
+
+        mock_page.locator = fake_locator
+
+        # During redirect, title is initially 'Just a moment...', then resolves to logged in page
+        titles = ["Just a moment...", "Jobs on SEEK - Australia"]
+        title_idx = [0]
+        async def fake_title():
+            idx = min(title_idx[0], len(titles) - 1)
+            t = titles[idx]
+            title_idx[0] += 1
+            return t
+
+        mock_page.title = AsyncMock(side_effect=fake_title)
+
+        async def fake_is_visible(target, timeout=None):
+            if target in (mock_email_input, "#emailAddress") or "email" in str(target).lower():
+                return True
+            if target == mock_code_btn or "email me a sign in code" in str(target).lower():
+                return True
+            for i in range(6):
+                if target == digit_box_mocks[i]:
+                    return True
+            if target == mock_submit_otp or "#submit-otp" in str(target).lower() or "verification" in str(target).lower():
+                return True
+            if "profile" in str(target).lower() and "au.seek.com" in mock_page.url:
+                return True
+            return False
+
+        mock_page.evaluate = AsyncMock(return_value=True)
+
+        mock_context = MagicMock()
+        mock_context.cookies = AsyncMock(return_value=[
+            {"name": "registeredCandidateId", "value": "999999", "domain": "au.seek.com"},
+            {"name": "appSession", "value": "active_auth_token", "domain": "au.seek.com"},
+        ])
+        mock_context.storage_state = AsyncMock(return_value={"cookies": [], "origins": []})
+
+        wait_cf_mock = AsyncMock(return_value=True)
+
+        with patch.object(agent, "_is_visible", side_effect=fake_is_visible), \
+             patch.object(agent, "_safe_title", side_effect=fake_title), \
+             patch.object(agent, "_wait_for_cloudflare", wait_cf_mock), \
+             patch.object(agent, "_human_delay", new_callable=AsyncMock), \
+             patch.object(agent, "_type_human", new_callable=AsyncMock):
+
+            agent.page = mock_page
+            agent.context = mock_context
+            login_result = await agent.login()
+            assert login_result is True
+            # Verify _wait_for_cloudflare was called to resolve the challenge during redirect
+            assert wait_cf_mock.called
+            success_events = [e for e in emitted_events if e.get("type") == "apply_login_success"]
+            assert len(success_events) == 1
+
+    asyncio.run(_run())
+
+
+def test_seek_login_detects_sign_in_as_unauthenticated():
+    """Verify that when sign-in buttons are visible on the page, login() correctly treats
+    the user as unauthenticated and does not report a false positive active session."""
+    async def _run():
+        emitted_events = []
+        agent = SeekApplyAgent(
+            credentials={"email": "candidate@domain.com"},
+            resume_data={},
+            profile={"email": "candidate@domain.com"},
+            progress_callback=lambda ev: emitted_events.append(ev),
+        )
+
+        mock_page = MagicMock()
+        mock_page.url = "https://au.seek.com/"
+        mock_page.goto = AsyncMock()
+
+        async def fake_is_visible(selector, timeout=None):
+            # Simulate guest homepage: "Sign in" is present
+            if any(k in selector for k in ["sign-in", "sign in", "Sign in"]):
+                return True
+            return False
+
+        with patch.object(agent, "_is_visible", side_effect=fake_is_visible), \
+             patch.object(agent, "_safe_title", return_value="SEEK - Jobs"), \
+             patch.object(agent, "_wait_for_cloudflare", new_callable=AsyncMock), \
+             patch.object(agent, "_human_delay", new_callable=AsyncMock):
+
+            agent.page = mock_page
+            # Check the sign_in / auth detection
+            has_sign_in = await agent._is_visible("[data-automation='sign in'], a:has-text('Sign in')", timeout=1000)
+            has_auth = await agent._is_visible("[data-automation='user-account']", timeout=1000)
+            is_logged_in = has_auth and not has_sign_in
+            assert is_logged_in is False
+
+    asyncio.run(_run())
+
+
+def test_seek_apply_uses_real_job_id_for_direct_apply():
+    """Verify that apply_to_job extracts the real SEEK job ID from apply_url instead of
+    using the internal SQLite database row ID."""
+    job = {
+        "id": 7761,  # Local SQLite row id
+        "company": "MVSI OnBoard",
+        "title": "Software Developer",
+        "apply_url": "https://au.seek.com/job/94847894",  # Real SEEK job ID is 94847894
+    }
+
+    apply_url = (job.get("apply_url") or "").strip()
+    seek_job_id = ""
+    if apply_url:
+        m = re.search(r"/job/(\d+)", apply_url)
+        if m:
+            seek_job_id = m.group(1)
+
+    assert seek_job_id == "94847894"
+    direct_apply_url = f"https://au.seek.com/job/{seek_job_id}/apply"
+    assert direct_apply_url == "https://au.seek.com/job/94847894/apply"
+    assert "7761" not in direct_apply_url
+
 

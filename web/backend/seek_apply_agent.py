@@ -84,6 +84,11 @@ class SeekApplyAgent:
         self._user_answers_cache: Dict[str, str] = {}
         self._playwright = None
         self._using_cdp = False
+        self._virtual_display = None
+        self._orig_display = os.environ.get("DISPLAY")
+        self._last_mouse_x = 320.0
+        self._last_mouse_y = 220.0
+        self._is_authenticated = False
 
     def request_stop(self):
         """Gracefully stop the apply session after current job."""
@@ -203,6 +208,45 @@ class SeekApplyAgent:
             return val
         return default if default is not None else val
 
+    async def _safe_goto(self, url: str, wait_until: str = "domcontentloaded", timeout: int = 30000) -> bool:
+        """
+        Safely navigate to URL, absorbing net::ERR_ABORTED and challenge redirects.
+        """
+        if not self.page:
+            return False
+        try:
+            await self.page.goto(url, wait_until=wait_until, timeout=timeout)
+            return True
+        except Exception as e:
+            err_msg = str(e)
+            if any(k in err_msg for k in ["ERR_ABORTED", "net::ERR_", "Navigation failed", "interrupted"]):
+                logger.debug(f"Navigation to {url} redirected / interrupted ({e}), continuing...")
+                await asyncio.sleep(1.5)
+                return True
+            logger.warning(f"Failed to navigate to {url}: {e}")
+            return False
+
+    async def _is_seek_signin_form(self) -> bool:
+        """Checks if the browser is currently showing an actual SEEK/Auth0 sign-in or OTP form."""
+        if not self.page:
+            return False
+        curr_url = self.page.url or ""
+        # 1. Active Auth0 login path
+        if "login.seek.com/login" in curr_url:
+            return True
+        # 2. Form input elements on active login or OTP verification screen
+        signin_input_selectors = (
+            "input[name='emailAddress_seekanz'], "
+            "input#emailAddress, "
+            "div[data-testid='container'] input[aria-label*='verification' i], "
+            "#field-0, "
+            "[data-testid='character-0']"
+        )
+        if await self._is_visible(signin_input_selectors, timeout=600):
+            return True
+        # 3. Explicit login submit button
+        return await self._is_visible("button:has-text('Email me a sign in code')", timeout=600)
+
     def _resolve_profile_resume_path(self) -> Optional[str]:
         """
         Resolves the candidate's resume strictly from the Profile section.
@@ -284,15 +328,46 @@ for it in col.get_all_items():
                     pass
                 return None
 
-            sources = [
-                ("Brave Safe Storage", os.path.expanduser("~/.config/BraveSoftware/Brave-Browser/Default/Cookies")),
-                ("Chrome Safe Storage", os.path.expanduser("~/.config/google-chrome/Default/Cookies")),
-                ("Chromium Safe Storage", os.path.expanduser("~/.config/chromium/Default/Cookies")),
-            ]
+            _key_cache = {}
+
+            def get_key(label_substr):
+                if label_substr in _key_cache:
+                    return _key_cache[label_substr]
+                try:
+                    script = f"""
+import secretstorage
+bus = secretstorage.dbus_init()
+col = secretstorage.get_default_collection(bus)
+for it in col.get_all_items():
+    if "{label_substr}" in it.get_label():
+        print(it.get_secret().hex())
+        break
+"""
+                    out = subprocess.check_output(["/usr/bin/python3", "-c", script], text=True).strip()
+                    if out:
+                        k = bytes.fromhex(out)
+                        _key_cache[label_substr] = k
+                        return k
+                except Exception:
+                    pass
+                _key_cache[label_substr] = None
+                return None
+
+            candidate_sources = []
+            for base, label in [
+                ("~/.config/google-chrome", "Chrome Safe Storage"),
+                ("~/.config/chromium", "Chromium Safe Storage"),
+                ("~/.config/BraveSoftware/Brave-Browser", "Brave Safe Storage"),
+                ("~/.config/microsoft-edge", "Chromium Safe Storage"),
+            ]:
+                expanded_base = os.path.expanduser(base)
+                if os.path.exists(expanded_base):
+                    for c_file in glob.glob(f"{expanded_base}/**/Cookies", recursive=True):
+                        candidate_sources.append((label, c_file))
 
             all_seek_cookies = []
 
-            for label, cookie_db in sources:
+            for label, cookie_db in candidate_sources:
                 if not os.path.exists(cookie_db):
                     continue
 
@@ -364,20 +439,32 @@ for it in col.get_all_items():
             if not all_seek_cookies:
                 return False
 
-            # Deduplicate by (domain, name)
+            # Deduplicate by (domain, name).
+            # NOTE: cf_clearance tokens are now INCLUDED because the browser
+            # binary is matched to the profile source, so TLS fingerprints
+            # are consistent and the clearance tokens will be valid.
             unique = {}
             for ck in all_seek_cookies:
-                unique[(ck["domain"], ck["name"])] = ck
+                # Sanitize keys for Playwright
+                clean_ck = {
+                    k: v for k, v in ck.items()
+                    if k in ("name", "value", "domain", "path", "expires", "httpOnly", "secure", "sameSite")
+                }
+                unique[(clean_ck["domain"], clean_ck["name"])] = clean_ck
 
             cookies_list = list(unique.values())
-            has_session = any(ck["name"] in ("appSession", "auth0") for ck in cookies_list)
+            has_session = any(ck["name"] in ("appSession", "auth0", "registeredCandidateId", "JobseekerSessionId", "last-known-sol-user-id") for ck in cookies_list)
             if not has_session:
                 return False
 
             state = {"cookies": cookies_list, "origins": []}
             for sp in [
+                Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_storage_state.json"),
+                Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/data/seek_storage_state.json"),
                 Path("web/backend/data/seek_storage_state.json"),
                 Path("data/seek_storage_state.json"),
+                Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_cookies.json"),
+                Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/data/seek_cookies.json"),
                 Path("web/backend/data/seek_cookies.json"),
                 Path("data/seek_cookies.json"),
             ]:
@@ -398,6 +485,31 @@ for it in col.get_all_items():
         Launch Playwright Chromium with anti-detection settings silently in the background.
         Does NOT open or display any visible window on the user's desktop unless explicitly requested.
         """
+        # Start invisible virtual display (Xvfb) on Linux so browser runs in real headful mode
+        # without popping up any visible window on the user's desktop. Real headful execution
+        # cleanly avoids Cloudflare's headless bot detection.
+        if not getattr(self, "_virtual_display", None):
+            try:
+                from pyvirtualdisplay import Display
+                self._virtual_display = Display(visible=0, size=(1920, 1080))
+                self._virtual_display.start()
+                os.environ["DISPLAY"] = f":{self._virtual_display.display}"
+                logger.info(f"SEEK virtual display started on :{self._virtual_display.display} for silent background headful execution")
+            except Exception as ve:
+                logger.debug(f"Virtual display start notice ({ve}), proceeding with native display")
+                self._virtual_display = None
+
+        if self._virtual_display:
+            is_headless = False
+        else:
+            is_headless = os.environ.get("HEADLESS", "true").lower() != "false"
+            if os.environ.get("SEEK_HEADLESS", "").lower() == "false":
+                is_headless = False
+
+        browser_env = dict(os.environ)
+        if self._virtual_display:
+            browser_env["DISPLAY"] = f":{self._virtual_display.display}"
+
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
@@ -435,168 +547,235 @@ for it in col.get_all_items():
         else:
             self._using_cdp = False
 
-        # 2. Check if fresh stored session exists; otherwise attempt auto-import from local browser
-        has_fresh_session = False
-        for sp in [
-            Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_storage_state.json"),
-            Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/data/seek_storage_state.json"),
-            Path("web/backend/data/seek_storage_state.json"),
-            Path("data/seek_storage_state.json"),
-        ]:
-            if sp.exists() and sp.stat().st_size > 100:
+        # 2. Always import fresh cookies from the local browser.
+        # cf_clearance tokens are short-lived (~30 min) and must be refreshed
+        # every time, not reused from stale stored files.
+        self._import_browser_cookies()
+
+        # Locate system browser binary.
+        # Strategy: prefer whichever browser actually holds SEEK session cookies
+        # so that cloned cf_clearance tokens match the browser's TLS fingerprint.
+        # Brave is included because SEEK sessions often live there.
+        import glob as _glob
+        import tempfile
+        import shutil
+        _seek_cookie_browsers = []  # (binary, profile_dir) tuples
+        _browser_candidates = [
+            ("/usr/bin/brave-browser", os.path.expanduser("~/.config/BraveSoftware/Brave-Browser/Default")),
+            ("/usr/bin/google-chrome", os.path.expanduser("~/.config/google-chrome/Default")),
+            ("/usr/bin/google-chrome-stable", os.path.expanduser("~/.config/google-chrome/Default")),
+            ("/opt/google/chrome/chrome", os.path.expanduser("~/.config/google-chrome/Default")),
+            ("/usr/bin/chromium", os.path.expanduser("~/.config/chromium/Default")),
+            ("/usr/bin/chromium-browser", os.path.expanduser("~/.config/chromium/Default")),
+        ]
+        for _bin, _prof in _browser_candidates:
+            if not os.path.exists(_bin) or not os.path.exists(_prof):
+                continue
+            # Check if this profile has SEEK cookies
+            _cookie_db = os.path.join(_prof, "Cookies")
+            if os.path.exists(_cookie_db):
                 try:
-                    s_data = json.loads(sp.read_text())
-                    if any(c.get("name") in ("appSession", "auth0") for c in s_data.get("cookies", [])):
-                        has_fresh_session = True
-                        break
+                    import sqlite3 as _sq
+                    _tmp_ck = tempfile.mktemp(suffix=".db")
+                    shutil.copy2(_cookie_db, _tmp_ck)
+                    _cn = _sq.connect(_tmp_ck)
+                    _rows = _cn.execute("SELECT COUNT(*) FROM cookies WHERE host_key LIKE '%seek%'").fetchone()
+                    _cn.close()
+                    os.remove(_tmp_ck)
+                    if _rows and _rows[0] > 0:
+                        _seek_cookie_browsers.append((_bin, _prof))
+                        continue
                 except Exception:
                     pass
+            _seek_cookie_browsers.append((_bin, _prof))  # still a viable fallback
 
-        if not has_fresh_session:
-            self._import_browser_cookies()
-
-        # Locate system browser binary: prioritize brave-browser since candidate's live session is in Brave
         browser_bin = None
-        for cand_bin in [
-            "/usr/bin/brave-browser",
-            "/opt/brave.com/brave/brave",
-            "/usr/bin/brave",
-            "/usr/bin/google-chrome",
-            "/usr/bin/google-chrome-stable",
-            "/opt/google/chrome/chrome",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-        ]:
-            if os.path.exists(cand_bin):
-                browser_bin = cand_bin
-                break
-
-        # Check if local desktop profile exists to clone cookies and Local Storage (Auth0 SPA tokens)
         desktop_profile_src = None
-        for prof_path in [
-            os.path.expanduser("~/.config/BraveSoftware/Brave-Browser/Default"),
-            os.path.expanduser("~/.config/google-chrome/Default"),
-            os.path.expanduser("~/.config/chromium/Default"),
-        ]:
-            if os.path.exists(prof_path):
-                desktop_profile_src = prof_path
-                break
+        if _seek_cookie_browsers:
+            browser_bin, desktop_profile_src = _seek_cookie_browsers[0]
+        else:
+            # Fallback: just find any available browser binary
+            for _bin, _prof in _browser_candidates:
+                if os.path.exists(_bin):
+                    browser_bin = _bin
+                    if os.path.exists(_prof):
+                        desktop_profile_src = _prof
+                    break
 
         cloned_profile_dir = None
         if desktop_profile_src and browser_bin:
             try:
-                import tempfile
-                import shutil
                 cloned_profile_dir = tempfile.mkdtemp(prefix="seek_profile_")
                 default_sub = os.path.join(cloned_profile_dir, "Default")
                 os.makedirs(default_sub, exist_ok=True)
-                for item in ["Local Storage", "IndexedDB", "Network"]:
+                # Clone Local Storage, IndexedDB, AND Cookies database.
+                # Including the Cookies DB is critical so that cf_clearance
+                # tokens — which are TLS-fingerprint-bound — remain valid
+                # when launched with the same browser binary.
+                for item in ["Local Storage", "IndexedDB", "Cookies"]:
                     src = os.path.join(desktop_profile_src, item)
                     dst = os.path.join(default_sub, item)
                     if os.path.exists(src):
-                        shutil.copytree(src, dst, dirs_exist_ok=True)
-                src_cookies = os.path.join(desktop_profile_src, "Cookies")
-                if os.path.exists(src_cookies):
-                    shutil.copy2(src_cookies, os.path.join(default_sub, "Cookies"))
+                        if os.path.isdir(src):
+                            shutil.copytree(src, dst, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(src, dst)
                 self._temp_user_data_dir = cloned_profile_dir
-                logger.info(f"Cloned live desktop profile from {desktop_profile_src} to {cloned_profile_dir}")
+                logger.info(f"Cloned live desktop profile from {desktop_profile_src} to {cloned_profile_dir} (browser: {browser_bin})")
             except Exception as pe:
                 logger.debug(f"Profile cloning note: {pe}")
                 cloned_profile_dir = None
 
-        pre_wids = set()
-        if os.environ.get("DISPLAY"):
-            try:
-                import subprocess
-                for cls_name in ["brave-browser", "google-chrome", "chromium"]:
-                    out = subprocess.run(["xdotool", "search", "--class", cls_name], capture_output=True, text=True)
-                    pre_wids.update(out.stdout.split())
-            except Exception:
-                pass
+        # Resolve browser major version to align User-Agent and Client Hints.
+        # Use the actual selected binary for version detection.
+        chrome_major = "152"
+        try:
+            import subprocess
+            _ver_bin = browser_bin or "google-chrome"
+            out = subprocess.check_output([_ver_bin, "--version"], text=True)
+            m = re.search(r"(\d+)\.", out)
+            if m:
+                chrome_major = m.group(1)
+        except Exception:
+            pass
+        user_agent = (
+            f"Mozilla/5.0 (X11; Linux x86_64) "
+            f"AppleWebKit/537.36 (KHTML, like Gecko) "
+            f"Chrome/{chrome_major}.0.0.0 Safari/537.36"
+        )
+
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--disable-infobars",
+            "--disable-dev-shm-usage",
+            "--disable-extensions",
+            "--window-size=1920,1080",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--lang=en-AU,en-US,en",
+        ]
+        if is_headless:
+            args.append("--headless=new")
 
         if cloned_profile_dir:
             try:
-                self.context = await self._playwright.chromium.launch_persistent_context(
-                    user_data_dir=cloned_profile_dir,
-                    executable_path=browser_bin,
-                    headless=False,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-blink-features=AutomationControlled",
-                        "--window-position=5000,5000",
-                        "--disable-dev-shm-usage",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                    ],
-                    viewport={"width": 1280, "height": 800},
+                # ── Native CDP Launch ──────────────────────────────────────────
+                # Playwright's launch_persistent_context intercepts connections
+                # through its own proxy layer, changing the TLS fingerprint
+                # (JA3/JA4). This makes cf_clearance tokens invalid regardless
+                # of browser binary. By launching the browser natively via
+                # subprocess and connecting through CDP, the browser retains
+                # its original TLS fingerprint.
+                import subprocess as _sp
+                import socket as _sock
+
+                # Find a free port for remote debugging
+                def _find_free_port():
+                    with _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM) as s:
+                        s.bind(('127.0.0.1', 0))
+                        return s.getsockname()[1]
+
+                cdp_port = _find_free_port()
+                native_args = [
+                    browser_bin or "brave-browser",
+                    f"--user-data-dir={cloned_profile_dir}",
+                    f"--remote-debugging-port={cdp_port}",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                    "--disable-dev-shm-usage",
+                    "--disable-extensions",
+                    "--window-size=1920,1080",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--lang=en-AU,en-US,en",
+                ]
+                if is_headless:
+                    native_args.append("--headless=new")
+
+                self._native_browser_proc = _sp.Popen(
+                    native_args,
+                    env=browser_env,
+                    stdout=_sp.DEVNULL,
+                    stderr=_sp.DEVNULL,
                 )
-                # Move newly spawned automated window off-display and minimize on X11
-                if os.environ.get("DISPLAY"):
+
+                # Wait for CDP endpoint to become available
+                cdp_url = f"http://127.0.0.1:{cdp_port}"
+                for _attempt in range(30):
+                    await asyncio.sleep(0.5)
                     try:
-                        import subprocess
-                        for cls_name in ["brave-browser", "google-chrome", "chromium"]:
-                            out = subprocess.run(["xdotool", "search", "--class", cls_name], capture_output=True, text=True)
-                            for wid in out.stdout.split():
-                                if wid not in pre_wids:
-                                    subprocess.run(["xdotool", "set_desktop_for_window", wid, "3"], capture_output=True)
-                                    subprocess.run(["xdotool", "windowminimize", wid], capture_output=True)
-                    except Exception:
-                        pass
+                        with _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM) as s:
+                            s.settimeout(1)
+                            s.connect(('127.0.0.1', cdp_port))
+                        break
+                    except (ConnectionRefusedError, OSError):
+                        continue
+                else:
+                    raise RuntimeError(f"Browser did not open CDP port {cdp_port} within 15s")
+
+                await asyncio.sleep(1)  # Give browser time to fully initialize
+
+                self.browser = await self._playwright.chromium.connect_over_cdp(cdp_url)
+                self._using_cdp = True
+                logger.info(f"Connected to native browser via CDP at {cdp_url} (pid={self._native_browser_proc.pid})")
+
+                if self.browser.contexts:
+                    self.context = self.browser.contexts[0]
+                else:
+                    self.context = await self.browser.new_context()
+
+                # Inject decrypted cookies from Brave into the native context
+                try:
+                    for sp in [
+                        Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_cookies.json"),
+                        Path("web/backend/data/seek_cookies.json"),
+                        Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_storage_state.json"),
+                        Path("web/backend/data/seek_storage_state.json"),
+                    ]:
+                        if sp.exists() and sp.stat().st_size > 50:
+                            data = json.loads(sp.read_text())
+                            cks = data if isinstance(data, list) else data.get("cookies", [])
+                            clean_cks = [
+                                {
+                                    k: v for k, v in c.items()
+                                    if k in ("name", "value", "domain", "path", "expires", "httpOnly", "secure", "sameSite")
+                                }
+                                for c in cks
+                            ]
+                            if clean_cks:
+                                await self.context.add_cookies(clean_cks)
+                                logger.info(f"Injected {len(clean_cks)} stored cookies into native CDP context")
+                                break
+                except Exception as cke:
+                    logger.debug(f"Cookie injection into native CDP notice: {cke}")
 
                 self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
-                logger.info("SEEK Browser initialized silently via cloned desktop profile in background")
+
+                try:
+                    await self.context.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                        window.chrome = window.chrome || { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
+                    """)
+                except Exception:
+                    pass
+
+                logger.info("SEEK Browser initialized via native CDP with real TLS fingerprint")
                 return
             except Exception as persist_err:
                 logger.warning(f"Persistent context launch failed ({persist_err}), falling back to standard launch...")
 
         # 3. Standalone launch fallback
-        is_headless = os.environ.get("HEADLESS", "true").lower() != "false"
-        if os.environ.get("SEEK_HEADLESS", "").lower() == "false":
-            is_headless = False
-
-        args = [
-            "--disable-blink-features=AutomationControlled",
-            "--disable-infobars",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-extensions",
-            "--window-size=1280,800",
-            "--disable-features=IsolateOrigins,site-per-process",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--silent-debugger-extension-api",
-        ]
-
-        if is_headless:
-            args.append("--headless=new")
-            launch_kwargs = {
-                "headless": True,
-                "args": args,
-            }
-        else:
-            args.append("--window-position=5000,5000")
-            launch_kwargs = {
-                "headless": False,
-                "args": args,
-            }
+        launch_kwargs = {
+            "headless": is_headless,
+            "args": args,
+            "ignore_default_args": ["--enable-automation"],
+            "env": browser_env,
+        }
 
         if browser_bin:
             launch_kwargs["executable_path"] = browser_bin
 
         self.browser = await self._playwright.chromium.launch(**launch_kwargs)
-
-        # Move fallback window off display on X11
-        if not is_headless and os.environ.get("DISPLAY"):
-            try:
-                import subprocess
-                for cls_name in ["brave-browser", "google-chrome", "chromium"]:
-                    out = subprocess.run(["xdotool", "search", "--class", cls_name], capture_output=True, text=True)
-                    for wid in out.stdout.split():
-                        if wid not in pre_wids:
-                            subprocess.run(["xdotool", "set_desktop_for_window", wid, "3"], capture_output=True)
-                            subprocess.run(["xdotool", "windowminimize", wid], capture_output=True)
-            except Exception:
-                pass
 
         storage_state_path = None
         for sp in [
@@ -611,38 +790,105 @@ for it in col.get_all_items():
 
         context_kwargs = {
             "viewport": {"width": 1280, "height": 800},
+            "user_agent": user_agent,
+            "locale": "en-AU",
+            "timezone_id": "Australia/Sydney",
         }
         if storage_state_path:
-            # Filter out stale cf clearance tokens
+            # Include all cookies including cf_clearance (browser binary matches profile)
             try:
                 s_data = json.loads(Path(storage_state_path).read_text())
-                filtered_cookies = [
-                    c for c in s_data.get("cookies", [])
-                    if not c.get("name", "").startswith("cf_")
-                    and not c.get("name", "").startswith("__cf")
-                    and not c.get("name", "").startswith("_cf")
-                ]
-                s_data["cookies"] = filtered_cookies
-                temp_state = Path("/tmp/seek_clean_state.json")
-                temp_state.write_text(json.dumps(s_data))
-                context_kwargs["storage_state"] = str(temp_state)
+                context_kwargs["storage_state"] = storage_state_path
             except Exception:
                 context_kwargs["storage_state"] = storage_state_path
 
         self.context = await self.browser.new_context(**context_kwargs)
         try:
             await self.context.add_init_script("""
-                Object.defineProperty(Object.getPrototypeOf(navigator), 'webdriver', { get: () => undefined });
-                window.chrome = { runtime: {} };
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                window.chrome = window.chrome || { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
             """)
         except Exception:
             pass
 
+        try:
+            from playwright_stealth import Stealth
+            stealth = Stealth()
+            await stealth.apply_stealth_async(self.context)
+
+            async def on_new_page(new_p):
+                try:
+                    await stealth.apply_stealth_async(new_p)
+                except Exception:
+                    pass
+            self.context.on("page", on_new_page)
+        except Exception:
+            pass
+
         self.page = await self.context.new_page()
+        try:
+            from playwright_stealth import Stealth
+            await Stealth().apply_stealth_async(self.page)
+        except Exception:
+            pass
+
         logger.info("SEEK Browser initialized silently in background")
 
     async def close_browser(self):
-        """Clean up browser resources and temp profile."""
+        """Persist cookies/storage_state, then clean up browser resources, temp profile, and virtual display."""
+        # Save session cookies and storage state BEFORE closing the context
+        # so the next run can reuse the authenticated session without re-login.
+        try:
+            if self.context:
+                try:
+                    cookies = await self.context.cookies()
+                    has_session = any(
+                        c.get("name") in ("registeredCandidateId", "JobseekerSessionId", "appSession", "auth0", "last-known-sol-user-id")
+                        for c in (cookies or [])
+                    )
+                    if cookies and has_session:
+                        # Only persist SEEK-related cookies (not the entire browser profile)
+                        clean_cookies = [
+                            c for c in cookies
+                            if any(d in c.get("domain", "") for d in ("seek.com", "seek.com.au"))
+                        ]
+                        for cp in [
+                            Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_cookies.json"),
+                            Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/data/seek_cookies.json"),
+                            Path("web/backend/data/seek_cookies.json"),
+                            Path("data/seek_cookies.json"),
+                        ]:
+                            cp.parent.mkdir(parents=True, exist_ok=True)
+                            cp.write_text(json.dumps(clean_cookies, indent=2))
+                        logger.info(f"Persisted {len(clean_cookies)} SEEK cookies on browser close")
+                except Exception as ce:
+                    logger.debug(f"Could not persist cookies on close: {ce}")
+                try:
+                    state = await self.context.storage_state()
+                    has_session_state = any(
+                        c.get("name") in ("registeredCandidateId", "JobseekerSessionId", "appSession", "auth0", "last-known-sol-user-id")
+                        for c in (state.get("cookies", []) if state else [])
+                    )
+                    if state and has_session_state:
+                        # Only persist SEEK-related cookies in storage state
+                        state["cookies"] = [
+                            c for c in state.get("cookies", [])
+                            if any(d in c.get("domain", "") for d in ("seek.com", "seek.com.au"))
+                        ]
+                        for sp in [
+                            Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_storage_state.json"),
+                            Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/data/seek_storage_state.json"),
+                            Path("web/backend/data/seek_storage_state.json"),
+                            Path("data/seek_storage_state.json"),
+                        ]:
+                            sp.parent.mkdir(parents=True, exist_ok=True)
+                            sp.write_text(json.dumps(state, indent=2))
+                        logger.info("Persisted SEEK storage_state on browser close")
+                except Exception as se:
+                    logger.debug(f"Could not persist storage_state on close: {se}")
+        except Exception:
+            pass
+
         try:
             if self.page:
                 await self.page.close()
@@ -663,8 +909,190 @@ for it in col.get_all_items():
                     shutil.rmtree(tmp_p, ignore_errors=True)
                 except Exception:
                     pass
+            # Kill native browser subprocess if we launched one
+            native_proc = getattr(self, "_native_browser_proc", None)
+            if native_proc:
+                try:
+                    native_proc.terminate()
+                    native_proc.wait(timeout=5)
+                except Exception:
+                    try:
+                        native_proc.kill()
+                    except Exception:
+                        pass
+                self._native_browser_proc = None
+            if getattr(self, "_virtual_display", None):
+                try:
+                    self._virtual_display.stop()
+                    logger.info("SEEK Virtual display stopped")
+                except Exception as vde:
+                    logger.debug(f"Virtual display stop error: {vde}")
+                self._virtual_display = None
+                if getattr(self, "_orig_display", None):
+                    os.environ["DISPLAY"] = self._orig_display
 
-    async def _wait_for_cloudflare(self, max_wait_seconds: int = 20):
+    async def _human_mouse_move_and_click(self, target_x: float, target_y: float):
+        """
+        Moves the cursor to (target_x, target_y) using a human-like cubic Bezier trajectory
+        with subtle velocity easing, perpendicular curvature, and realistic down/up durations.
+        """
+        if not self.page:
+            return
+        import math
+        start_x = getattr(self, "_last_mouse_x", 320.0)
+        start_y = getattr(self, "_last_mouse_y", 220.0)
+
+        dx = target_x - start_x
+        dy = target_y - start_y
+        dist = math.hypot(dx, dy)
+        steps = max(15, min(int(dist / 20), 45))
+
+        # Perpendicular vector for natural human arc curvature
+        perp_x = -dy / (dist + 1e-6)
+        perp_y = dx / (dist + 1e-6)
+        arc = random.uniform(-0.25, 0.25) * dist
+
+        ctrl1_x = start_x + dx * 0.25 + perp_x * arc + random.uniform(-6, 6)
+        ctrl1_y = start_y + dy * 0.25 + perp_y * arc + random.uniform(-6, 6)
+        ctrl2_x = start_x + dx * 0.75 + perp_x * arc * 0.6 + random.uniform(-6, 6)
+        ctrl2_y = start_y + dy * 0.75 + perp_y * arc * 0.6 + random.uniform(-6, 6)
+
+        for i in range(1, steps + 1):
+            t = i / float(steps)
+            # Smooth ease-in-out curve
+            t_eased = t * t * (3 - 2 * t)
+            inv = 1.0 - t_eased
+            x = (inv**3)*start_x + 3*(inv**2)*t_eased*ctrl1_x + 3*inv*(t_eased**2)*ctrl2_x + (t_eased**3)*target_x
+            y = (inv**3)*start_y + 3*(inv**2)*t_eased*ctrl1_y + 3*inv*(t_eased**2)*ctrl2_y + (t_eased**3)*target_y
+            if i < steps:
+                x += random.uniform(-1.0, 1.0)
+                y += random.uniform(-1.0, 1.0)
+            await self.page.mouse.move(x, y)
+            await asyncio.sleep(random.uniform(0.008, 0.018))
+
+        self._last_mouse_x = target_x
+        self._last_mouse_y = target_y
+
+        # Natural pause over target before pressing
+        await asyncio.sleep(random.uniform(0.18, 0.32))
+        await self.page.mouse.down()
+        # Human click duration
+        await asyncio.sleep(random.uniform(0.09, 0.14))
+        await self.page.mouse.up()
+        await asyncio.sleep(random.uniform(0.1, 0.2))
+
+        # Drift away naturally after click
+        drift_x = target_x + random.uniform(25, 60)
+        drift_y = target_y + random.uniform(-30, 30)
+        await self.page.mouse.move(drift_x, drift_y)
+        self._last_mouse_x = drift_x
+        self._last_mouse_y = drift_y
+
+    async def _simulate_human_cursor_drift(self):
+        """Simulates subtle human cursor movements on the page."""
+        if not self.page:
+            return
+        target_x = random.uniform(400, 750)
+        target_y = random.uniform(250, 550)
+        start_x = getattr(self, "_last_mouse_x", 300.0)
+        start_y = getattr(self, "_last_mouse_y", 200.0)
+        steps = random.randint(10, 18)
+        for i in range(1, steps + 1):
+            t = i / float(steps)
+            x = start_x + (target_x - start_x) * t + random.uniform(-1.5, 1.5)
+            y = start_y + (target_y - start_y) * t + random.uniform(-1.5, 1.5)
+            await self.page.mouse.move(x, y)
+            await asyncio.sleep(random.uniform(0.01, 0.025))
+        self._last_mouse_x = target_x
+        self._last_mouse_y = target_y
+
+    async def _attempt_turnstile_click(self) -> bool:
+        """Attempts to detect and interact with Cloudflare Turnstile verification using human cursor movement."""
+        if not self.page:
+            return False
+        try:
+            # Check frames for Turnstile
+            for f in self.page.frames:
+                try:
+                    if f.is_detached():
+                        continue
+                    if any(kw in f.url for kw in ["turnstile", "challenge-platform", "challenges.cloudflare"]):
+                        el = await f.frame_element()
+                        box = await el.bounding_box()
+                        if box and box.get("width", 0) > 0 and box.get("height", 0) > 0:
+                            click_x = box["x"] + min(28, box["width"] * 0.1)
+                            click_y = box["y"] + (box["height"] / 2)
+                            await self._human_mouse_move_and_click(click_x, click_y)
+                            logger.info(f"Interacted with Turnstile frame at ({click_x:.1f}, {click_y:.1f}) via human cursor trajectory")
+                            return True
+                except Exception:
+                    continue
+
+            # Check page-level challenge containers
+            for sel in [
+                "iframe[src*='challenges.cloudflare.com']",
+                "iframe[src*='challenge-platform']",
+                "#cf-turnstile",
+                "[data-sitekey]",
+                "#challenge-stage",
+            ]:
+                loc = self.page.locator(sel).first
+                if await self._is_visible(loc, timeout=300):
+                    box = await loc.bounding_box()
+                    if box and box.get("width", 0) > 0 and box.get("height", 0) > 0:
+                        click_x = box["x"] + min(28, box["width"] * 0.1)
+                        click_y = box["y"] + (box["height"] / 2)
+                        await self._human_mouse_move_and_click(click_x, click_y)
+                        logger.info(f"Interacted with Turnstile element ({sel}) at ({click_x:.1f}, {click_y:.1f}) via human cursor trajectory")
+                        return True
+        except Exception as e:
+            logger.debug(f"Turnstile interaction note: {e}")
+        return False
+
+    async def _wait_for_turnstile_token(self, timeout_seconds: int = 10, simulate_movement: bool = True) -> bool:
+        """Polls for cf-turnstile-response token generation while simulating subtle human mouse activity."""
+        if not self.page:
+            return False
+        rounds = max(1, int(timeout_seconds * 2))
+        for r in range(rounds):
+            try:
+                token = await self.page.evaluate("""() => {
+                    const el = document.querySelector('input[name="cf-turnstile-response"]');
+                    return el ? el.value : "";
+                }""")
+                if token and len(token) > 20:
+                    return True
+            except Exception:
+                pass
+            if simulate_movement and r > 0 and r % 3 == 0:
+                try:
+                    await self._simulate_human_cursor_drift()
+                except Exception:
+                    pass
+            await self._human_delay(0.2, 0.5)
+        return False
+
+    async def _reset_turnstile(self):
+        """Resets the Turnstile widget and clears stale response tokens."""
+        if not self.page:
+            return
+        try:
+            await self._safe_await(self.page.evaluate("""() => {
+                try {
+                    if (typeof window.turnstile !== 'undefined' && window.turnstile.reset) {
+                        window.turnstile.reset();
+                    }
+                } catch(e) {}
+                const el = document.querySelector('input[name="cf-turnstile-response"]');
+                if (el) el.value = "";
+                const els = document.querySelectorAll('input[name*="turnstile" i], input[name*="cf-chl" i]');
+                els.forEach(i => { i.value = ""; });
+            }"""))
+            logger.info("Reset Turnstile widget and cleared token value")
+        except Exception as e:
+            logger.debug(f"Turnstile reset note: {e}")
+
+    async def _wait_for_cloudflare(self, max_wait_seconds: int = 25):
         """Waits gracefully for Cloudflare challenge or Turnstile verification to clear."""
         rounds = max(1, max_wait_seconds)
         for r in range(rounds):
@@ -677,22 +1105,82 @@ for it in col.get_all_items():
             except Exception:
                 pass
 
-            is_cf = (
-                "just a moment" in title
-                or title.startswith("loading ")
-                or "__cf_chl_" in curr_url
-                or "checking your browser" in title
+            is_cf_loading = title.startswith("loading ") or "__cf_chl_" in curr_url or "just a moment" in title
+            is_cf_challenge = (
+                "checking your browser" in title
                 or "attention required" in title
                 or "security verification" in body_text
                 or ("ray id" in body_text and "cloudflare" in body_text)
             )
-            if not is_cf and title != "":
+            if not is_cf_challenge and not is_cf_loading and title != "":
                 if r > 0:
                     logger.info(f"Cloudflare verification cleared after {r}s (Title: {title})")
                 return True
+
+            # If in redirecting phase or initial loading, give it time to navigate to target URL without clicking
+            if is_cf_loading and not is_cf_challenge:
+                await asyncio.sleep(1)
+                continue
+
+            # Attempt Turnstile interaction only after 8 seconds of natural frame mount if still challenged
+            if is_cf_challenge and r >= 8 and r % 4 == 0:
+                await self._attempt_turnstile_click()
+
             await asyncio.sleep(1)
 
         logger.warning("Cloudflare challenge did not clear automatically within timeout")
+        return False
+
+    async def _is_on_seek_code_screen(self, body_text: Optional[str] = None) -> bool:
+        """
+        Check if the browser is currently on SEEK's 6-digit OTP verification screen.
+        Evaluates:
+        1. URL hash / path: '#/verification-code' or 'verification-code'.
+        2. Body text: 'check your email', 'enter the 6-digit code', 'we sent a code', etc.
+        3. DOM elements: VerificationInput containers, split digit inputs, or OTP fields.
+        """
+        if not self.page:
+            return False
+
+        try:
+            curr_url = self.page.url or ""
+            if any(k in curr_url.lower() for k in ["#/verification-code", "verification-code", "verification_code"]):
+                return True
+
+            text = body_text
+            if text is None:
+                try:
+                    text = (await self._safe_await(self.page.locator("body").inner_text(), default="")).lower()
+                except Exception:
+                    text = ""
+
+            if any(k in text for k in [
+                "check your email",
+                "enter the 6-digit code",
+                "enter your 6 digit code",
+                "6-digit code",
+                "we sent a code",
+                "we've sent a code",
+                "enter the verification code",
+                "enter sign-in code",
+            ]):
+                return True
+
+            code_selectors = (
+                "div[data-testid='container'] input, "
+                "div[data-testid='container'], "
+                "#field-0, "
+                "[data-testid='character-0'], "
+                "input[aria-label*='verification' i], "
+                "input[autocomplete='one-time-code'], "
+                "input[data-testid*='digit-input'], "
+                "#submit-OTP"
+            )
+            if await self._is_visible(code_selectors, timeout=300):
+                return True
+        except Exception:
+            pass
+
         return False
 
     async def login(self) -> bool:
@@ -704,6 +1192,10 @@ for it in col.get_all_items():
         4. Requests OTP code from user via ask_user callback.
         5. Enters code, submits, and persists cookies/storage_state for future runs.
         """
+        if self._is_authenticated:
+            logger.info("SEEK agent is already authenticated in this session.")
+            return True
+
         cookie_paths = [
             Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/web/backend/data/seek_storage_state.json"),
             Path("/mnt/extra/morningstar/Gradebuddy/job_search_automation/data/seek_storage_state.json"),
@@ -716,15 +1208,18 @@ for it in col.get_all_items():
         ]
 
         auth_indicators = (
-            "[data-automation='profile'], "
+            "[data-automation='user-account'], "
             "[data-automation='account name'], "
-            "[aria-label='Profile Avatar'], "
-            "[data-automation='mobile-profile-avatar-wrapper'], "
-            "a[href*='/profile'], "
-            "a:has-text('Profile'), "
+            "header a[data-automation='user-profile'], "
             "[data-automation='sign out'], "
+            "[data-automation='sign-out'], "
             "button:has-text('Sign out'), "
             "a:has-text('Sign out')"
+        )
+        sign_in_indicators = (
+            "header a[data-automation='sign in'], "
+            "header a:has-text('Sign in'), "
+            "header button:has-text('Sign in')"
         )
 
         curr_url = self.page.url if self.page else ""
@@ -744,9 +1239,8 @@ for it in col.get_all_items():
                                 elif isinstance(loaded_data, dict) and "cookies" in loaded_data:
                                     cookies_to_add = loaded_data["cookies"]
                                 if cookies_to_add:
-                                    sanitized = [c for c in cookies_to_add if c.get("name") not in ("cf_clearance", "__cf_bm")]
-                                    await self.context.add_cookies(sanitized)
-                                    logger.info(f"Restoring {len(sanitized)} SEEK session cookies from {cp}")
+                                    await self.context.add_cookies(cookies_to_add)
+                                    logger.info(f"Restoring {len(cookies_to_add)} SEEK session cookies from {cp}")
                                     break
                             except Exception:
                                 pass
@@ -757,16 +1251,29 @@ for it in col.get_all_items():
 
                 curr_title = (await self._safe_title()).lower()
                 if "just a moment" not in curr_title and curr_title:
-                    is_logged_in = await self._is_visible(auth_indicators, timeout=3000)
-                    has_sign_in = await self._is_visible("a:has-text('Sign in'), button:has-text('Sign in')", timeout=1500)
-                    if is_logged_in and not has_sign_in and "login.seek.com" not in self.page.url:
+                    has_sign_in = await self._is_visible(sign_in_indicators, timeout=2000)
+                    has_auth_el = await self._is_visible(auth_indicators, timeout=2000)
+
+                    # Check context cookies for active session
+                    curr_cookies = await self.context.cookies()
+                    c_names = {c.get("name") for c in curr_cookies}
+                    has_session_cookie = any(
+                        cn in c_names
+                        for cn in ["registeredCandidateId", "JobseekerSessionId", "auth0", "auth0_compat", "appSession"]
+                    )
+                    is_logged_in = (has_auth_el or (has_session_cookie and not has_sign_in)) and "login.seek.com" not in self.page.url
+
+                    if is_logged_in:
                         logger.info("SEEK session valid. Logged in successfully.")
+                        self._is_authenticated = True
                         self._emit({
                             "type": "apply_login_success",
                             "method": "cookies",
                             "message": "Authenticated with SEEK (active session)",
                         })
                         return True
+                    else:
+                        logger.info(f"SEEK session check: has_auth_el={has_auth_el}, has_session_cookie={has_session_cookie}, has_sign_in={has_sign_in}. Starting login flow.")
             except Exception as e:
                 logger.debug(f"Session restoration check error: {e}")
 
@@ -787,20 +1294,19 @@ for it in col.get_all_items():
         })
 
         try:
-            # If not already on login or oauth portal, navigate to https://au.seek.com/oauth/login
-            if not any(k in self.page.url for k in ["login.seek.com", "oauth/login"]):
-                await self.page.goto("https://au.seek.com/oauth/login", wait_until="domcontentloaded", timeout=25000)
-                await self._wait_for_cloudflare(15)
-                await self._human_delay(1.5, 2.5)
-
-            # Wait for email input to be visible (Auth0 SPA mount)
+            # If email input is not already visible on the current page and not on login portal, navigate to https://au.seek.com/oauth/login
             email_input_sel = (
                 "input#emailAddress, "
-                "input[type='email'], "
                 "input[name='emailAddress_seekanz'], "
+                "input[type='email'], "
                 "input[name='email'], "
                 "[data-testid='email-input']"
             )
+            has_email_field = await self._is_visible(email_input_sel, timeout=1000)
+            if not has_email_field and not any(k in self.page.url for k in ["login.seek.com", "oauth/login"]):
+                await self._safe_goto("https://au.seek.com/oauth/login", wait_until="domcontentloaded", timeout=25000)
+                await self._wait_for_cloudflare(15)
+                await self._human_delay(1.5, 2.5)
             email_field = self.page.locator(email_input_sel).first
             for _ in range(10):
                 if await self._is_visible(email_field, timeout=500):
@@ -811,6 +1317,29 @@ for it in col.get_all_items():
                 await self._type_human(email_field, email)
                 await self._human_delay(0.5, 1.0)
 
+                # Proactively resolve Turnstile before clicking submit if present on form
+                has_turnstile = any(
+                    any(k in f.url for k in ["turnstile", "challenges.cloudflare"])
+                    for f in self.page.frames
+                )
+                if not has_turnstile:
+                    has_turnstile = await self._is_visible("iframe[src*='challenges.cloudflare.com'], [data-sitekey], #cf-turnstile", timeout=500)
+                if has_turnstile:
+                    logger.info("Turnstile challenge detected on email sign-in. Waiting for proof-of-work to complete...")
+                    # Wait longer (12s) for Turnstile's proof-of-work phase to finish.
+                    # Clicking too early causes permanent 'Verification failed' state.
+                    token_ok = await self._wait_for_turnstile_token(timeout_seconds=12, simulate_movement=True)
+                    if not token_ok:
+                        logger.info("Turnstile proof-of-work did not auto-resolve. Clicking checkbox...")
+                        await self._attempt_turnstile_click()
+                        token_ok = await self._wait_for_turnstile_token(timeout_seconds=10, simulate_movement=False)
+                    if not token_ok:
+                        # Reset and retry once more — Turnstile may have entered error state
+                        await self._reset_turnstile()
+                        await asyncio.sleep(3)
+                        await self._attempt_turnstile_click()
+                        token_ok = await self._wait_for_turnstile_token(timeout_seconds=10, simulate_movement=True)
+
                 # Submit email to request code or proceed
                 code_btn_sel = (
                     "button[type='submit']:has-text('Email me a sign in code'), "
@@ -818,45 +1347,93 @@ for it in col.get_all_items():
                     "button[type='submit']"
                 )
                 submit_btn = self.page.locator(code_btn_sel).first
-                if await self._is_visible(submit_btn, timeout=3000):
+                # Only click submit if Turnstile token is present (or no Turnstile detected)
+                token_present = True
+                if has_turnstile:
+                    try:
+                        _tok = await self.page.evaluate('''() => {
+                            const el = document.querySelector('input[name="cf-turnstile-response"]');
+                            return el ? el.value : "";
+                        }''')
+                        token_present = bool(_tok and len(_tok) > 20)
+                    except Exception:
+                        pass
+                if token_present and await self._is_visible(submit_btn, timeout=3000):
                     await submit_btn.click()
-                    await self._human_delay(2.5, 4.0)
+                    await self._human_delay(1.5, 2.5)
 
-            # Check for reCAPTCHA challenge or errors
-            body_text = ""
+            # Verification code screen polling loop with automatic Turnstile challenge recovery
+            is_code_screen = False
+            max_challenge_attempts = 3
+            challenge_attempts = 0
+
+            for poll_cycle in range(15):
+                curr_url = self.page.url if self.page else ""
+                if any(k in curr_url for k in ["au.seek.com/profile", "au.seek.com/my-activity"]):
+                    logger.info("Redirected to authenticated profile directly")
+                    return True
+
+                body_text = ""
+                try:
+                    body_text = (await self.page.locator("body").inner_text() or "").lower()
+                except Exception:
+                    pass
+
+                has_recaptcha_msg = (
+                    "please complete the recaptcha" in body_text
+                    or "verify you are not a bot" in body_text
+                    or "recaptcha" in body_text
+                )
+
+                if has_recaptcha_msg and challenge_attempts < max_challenge_attempts:
+                    challenge_attempts += 1
+                    logger.info(f"SEEK authentication challenge active on sign-in (attempt {challenge_attempts}/{max_challenge_attempts}). Resolving Turnstile with cursor...")
+                    self._emit({
+                        "type": "apply_status",
+                        "message": "Security verification active on SEEK sign-in. Resolving challenge automatically...",
+                    })
+                    await self._reset_turnstile()
+                    token_ok = await self._wait_for_turnstile_token(timeout_seconds=4, simulate_movement=True)
+                    if not token_ok:
+                        await self._attempt_turnstile_click()
+                        await self._wait_for_turnstile_token(timeout_seconds=8, simulate_movement=False)
+
+                    submit_btn = self.page.locator(code_btn_sel).first
+                    if await self._is_visible(submit_btn, timeout=2000):
+                        await submit_btn.click()
+                        await self._human_delay(2.0, 3.5)
+                    continue
+
+                if has_recaptcha_msg and challenge_attempts >= max_challenge_attempts:
+                    # Challenge did not resolve within maximum attempts
+                    break
+
+                if await self._is_on_seek_code_screen(body_text):
+                    is_code_screen = True
+                    logger.info(f"SEEK verification code screen reached at poll cycle {poll_cycle}")
+                    break
+
+                await self._human_delay(0.8, 1.5)
+
+            # Final check of body text after resolution attempts
             try:
                 body_text = (await self.page.locator("body").inner_text() or "").lower()
             except Exception:
                 pass
 
-            if "please complete the recaptcha" in body_text or "verify you are not a bot" in body_text or "recaptcha" in body_text:
+            if not is_code_screen:
+                is_code_screen = await self._is_on_seek_code_screen(body_text)
+
+            if not is_code_screen and ("please complete the recaptcha" in body_text or "verify you are not a bot" in body_text):
+                # Attempt to refresh cookies from system browser in case active in user browser
+                if self._import_browser_cookies():
+                    logger.info("Imported active browser session during challenge. Verifying...")
                 logger.warning("SEEK authentication bot challenge active on login page (reCAPTCHA)")
                 self._emit({
                     "type": "apply_error",
                     "message": "SEEK sign-in challenge active (reCAPTCHA). Please open SEEK in your browser to log in once, so the agent can use your active session.",
                 })
                 return False
-
-            is_code_screen = (
-                "check your email" in body_text
-                or "enter the 6-digit code" in body_text
-                or "enter your 6 digit code" in body_text
-                or "6-digit code" in body_text
-                or "we sent a code" in body_text
-                or "we've sent a code" in body_text
-                or ("verification" in body_text and "code" in body_text)
-                or await self._is_visible(
-                    "input[aria-label*='verification' i], "
-                    "#submit-OTP, "
-                    "[data-cy='verification'], "
-                    "[data-testid*='character-0'], "
-                    "#field-0, "
-                    "div[data-testid='container'] input, "
-                    "input[data-testid*='digit-input'], "
-                    "input[autocomplete='one-time-code']",
-                    timeout=2000
-                )
-            )
 
             if not is_code_screen and not any(k in self.page.url for k in ["au.seek.com/profile", "au.seek.com/my-activity"]):
                 if "login.seek.com" in self.page.url:
@@ -1195,25 +1772,37 @@ for it in col.get_all_items():
                 })
                 return False
 
-            if "just a moment" in (await self._safe_title()).lower():
-                logger.warning("Trapped on Cloudflare challenge during login")
+            # Check for Cloudflare challenge during authentication redirect
+            page_title = (await self._safe_title()).lower()
+            curr_url = self.page.url if self.page else ""
+            if "just a moment" in page_title or "__cf_chl_" in curr_url or "security verification" in page_title:
+                logger.info("Cloudflare challenge active during authentication redirect, waiting for resolution...")
                 self._emit({
-                    "type": "apply_error",
-                    "message": "Cloudflare challenge active during authentication redirect.",
+                    "type": "apply_status",
+                    "message": "Cloudflare security verification active during redirect. Resolving...",
                 })
-                return False
+                cf_cleared = await self._wait_for_cloudflare(max_wait_seconds=25)
+                if not cf_cleared:
+                    try:
+                        logger.info("Cloudflare challenge pending after wait, attempting page reload...")
+                        await self.page.reload(wait_until="domcontentloaded", timeout=15000)
+                        await self._wait_for_cloudflare(max_wait_seconds=15)
+                    except Exception as reload_err:
+                        logger.debug(f"Reload notice during CF verification: {reload_err}")
 
             # Strict verification of authentication indicators
             is_authenticated = False
-            for _ in range(5):
-                if await self._is_visible(auth_indicators, timeout=2000):
+            for _ in range(8):
+                has_auth = await self._is_visible(auth_indicators, timeout=2000)
+                has_signin = await self._is_visible(sign_in_indicators, timeout=1000)
+                if has_auth and not has_signin:
                     is_authenticated = True
                     break
-                # Also check cookies for candidate authentication
+                # Also check cookies for candidate authentication (Auth0 sets appSession / registeredCandidateId)
                 try:
                     curr_cookies = await self.context.cookies()
                     c_names = {c.get("name") for c in curr_cookies}
-                    if any(cn in c_names for cn in ["registeredCandidateId", "appSession", "auth0.GCQ2kVaZFnAkVZYKkgwqCq7oFfiYYUfA.is.authenticated"]) and "login.seek.com" not in self.page.url:
+                    if any(cn in c_names for cn in ["registeredCandidateId", "appSession", "JobseekerSessionId", "auth0", "auth0.GCQ2kVaZFnAkVZYKkgwqCq7oFfiYYUfA.is.authenticated"]) and "login.seek.com" not in self.page.url:
                         is_authenticated = True
                         break
                 except Exception:
@@ -1221,6 +1810,16 @@ for it in col.get_all_items():
                 await asyncio.sleep(1)
 
             if not is_authenticated:
+                final_title = (await self._safe_title()).lower()
+                final_url = self.page.url if self.page else ""
+                if "just a moment" in final_title or "__cf_chl_" in final_url:
+                    logger.warning("Trapped on Cloudflare challenge during login after full wait")
+                    self._emit({
+                        "type": "apply_error",
+                        "message": "Cloudflare challenge active during authentication redirect. Please ensure you are logged into SEEK in Chrome.",
+                    })
+                    return False
+
                 logger.warning("SEEK authentication indicators not present on destination page after sign-in")
                 self._emit({
                     "type": "apply_error",
@@ -1228,23 +1827,27 @@ for it in col.get_all_items():
                 })
                 return False
 
+            self._is_authenticated = True
+
             # Persist authenticated cookies and storage state
             try:
                 cookies = await self.context.cookies()
-                for cp in cookie_paths:
-                    cp.parent.mkdir(parents=True, exist_ok=True)
-                    cp.write_text(json.dumps(cookies, indent=2))
+                if cookies and len(cookies) > 0:
+                    for cp in cookie_paths:
+                        cp.parent.mkdir(parents=True, exist_ok=True)
+                        cp.write_text(json.dumps(cookies, indent=2))
             except Exception:
                 pass
 
             try:
                 state = await self.context.storage_state()
-                for sp in [
-                    Path("web/backend/data/seek_storage_state.json"),
-                    Path("data/seek_storage_state.json"),
-                ]:
-                    sp.parent.mkdir(parents=True, exist_ok=True)
-                    sp.write_text(json.dumps(state, indent=2))
+                if state and state.get("cookies"):
+                    for sp in [
+                        Path("web/backend/data/seek_storage_state.json"),
+                        Path("data/seek_storage_state.json"),
+                    ]:
+                        sp.parent.mkdir(parents=True, exist_ok=True)
+                        sp.write_text(json.dumps(state, indent=2))
             except Exception:
                 pass
 
@@ -1274,8 +1877,16 @@ for it in col.get_all_items():
         title = job.get("title", "Position")
         apply_url = (job.get("apply_url") or "").strip()
 
+        seek_job_id = ""
+        if apply_url:
+            m = re.search(r"/job/(\d+)", apply_url)
+            if m:
+                seek_job_id = m.group(1)
+        if not seek_job_id and str(job_id).isdigit() and len(str(job_id)) >= 6:
+            seek_job_id = str(job_id)
+
         if not apply_url:
-            apply_url = f"https://au.seek.com/job/{job_id}"
+            apply_url = f"https://au.seek.com/job/{seek_job_id or job_id}"
 
         self._emit({
             "type": "apply_job_start",
@@ -1287,8 +1898,8 @@ for it in col.get_all_items():
         })
 
         try:
-            await self.page.goto(apply_url, wait_until="domcontentloaded", timeout=30000)
-            cf_ok = await self._wait_for_cloudflare(15)
+            await self._safe_goto(apply_url, wait_until="domcontentloaded", timeout=30000)
+            cf_ok = await self._wait_for_cloudflare(20)
             if not cf_ok:
                 logger.warning(f"Cloudflare verification active on {company} — {title}")
                 self._emit({
@@ -1404,12 +2015,18 @@ for it in col.get_all_items():
                 await self._human_delay(2.0, 3.5)
 
             # Wait for URL to settle (check for OAuth redirect, login, or apply form)
-            for _ in range(10):
+            # SEEK often performs a momentary OAuth bounce: au.seek.com/oauth/login -> /apply
+            for _ in range(16):
                 curr_u = self.page.url
-                if any(k in curr_u for k in ["login.seek.com", "oauth/login"]):
+                if "/apply" in curr_u and "oauth" not in curr_u and "login" not in curr_u:
                     break
-                if "/apply" in curr_u and "oauth" not in curr_u:
-                    break
+                if "login.seek.com/login" in curr_u:
+                    # Give it a moment to see if it redirects silently via SSO
+                    await asyncio.sleep(1.5)
+                    if "/apply" in self.page.url and "login" not in self.page.url:
+                        break
+                    if await self._is_seek_signin_form():
+                        break
                 await asyncio.sleep(0.5)
 
             # Check if clicked apply redirected to an external domain
@@ -1432,23 +2049,24 @@ for it in col.get_all_items():
                     message="Skipped: Employer requires external application (SEEK Quick Apply not offered)",
                 )
 
-            # 4. Handle sign-in prompt if prompted
-            if "login.seek.com" in self.page.url or "oauth/login" in self.page.url:
-                login_ok = await self.login()
-                if not login_ok:
-                    self._emit({
-                        "type": "apply_job_done",
-                        "job_id": job_id,
-                        "company": company,
-                        "title": title,
-                        "status": "error",
-                        "message": "SEEK authentication required to apply. Active login session missing.",
-                    })
-                    return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Authentication required for Quick Apply")
+            # 4. Handle sign-in prompt if prompted (portal redirect or embedded form)
+            if await self._is_seek_signin_form():
+                if not self._is_authenticated:
+                    login_ok = await self.login()
+                    if not login_ok:
+                        self._emit({
+                            "type": "apply_job_done",
+                            "job_id": job_id,
+                            "company": company,
+                            "title": title,
+                            "status": "error",
+                            "message": "SEEK authentication required to apply. Active login session missing.",
+                        })
+                        return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Authentication required for Quick Apply")
 
                 # Wait for redirect back to apply
                 for _ in range(12):
-                    if "/apply" in self.page.url and "login" not in self.page.url and "oauth" not in self.page.url:
+                    if "/apply" in self.page.url and not await self._is_seek_signin_form():
                         break
                     await asyncio.sleep(0.5)
 
@@ -1466,60 +2084,61 @@ for it in col.get_all_items():
                                 pass
                         await self._human_delay(2.5, 4.0)
 
-            # Check if still trapped on login/auth page
-            if any(k in self.page.url for k in ["login.seek.com", "oauth/login"]):
-                logger.warning(f"Aborting apply for {company} — {title}: Still stuck on login portal ({self.page.url})")
-                self._emit({
-                    "type": "apply_job_done",
-                    "job_id": job_id,
-                    "company": company,
-                    "title": title,
-                    "status": "error",
-                    "message": "SEEK authentication required to apply. Active login session missing.",
-                })
-                return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Authentication required for Quick Apply")
-
             # If not yet in apply wizard, attempt direct navigation to /apply endpoint
-            if "/apply" not in self.page.url and any(domain in self.page.url for domain in ["seek.com.au", "au.seek.com"]) and job_id:
-                direct_apply_url = f"https://au.seek.com/job/{job_id}/apply"
+            target_seek_id = seek_job_id or (str(job_id) if str(job_id).isdigit() and len(str(job_id)) >= 6 else "")
+            if ("/apply" not in self.page.url or await self._is_seek_signin_form()) and any(domain in self.page.url for domain in ["seek.com.au", "au.seek.com"]) and target_seek_id:
+                direct_apply_url = f"https://au.seek.com/job/{target_seek_id}/apply"
                 try:
-                    await self.page.goto(direct_apply_url, wait_until="domcontentloaded", timeout=20000)
+                    await self._safe_goto(direct_apply_url, wait_until="domcontentloaded", timeout=20000)
                     await self._wait_for_cloudflare(15)
                     await self._human_delay(1.5, 2.5)
                 except Exception:
                     pass
 
-            # Guard: Ensure we are actually on /apply before starting form wizard loop
-            if "/apply" not in self.page.url:
-                if any(k in self.page.url for k in ["login.seek.com", "oauth/login"]):
+            # Guard: Ensure we are actually on /apply and NOT on a sign-in screen
+            if "/apply" not in self.page.url or await self._is_seek_signin_form():
+                if await self._is_seek_signin_form():
+                    logger.info(f"Sign-in form active for {company} — {title}. Authenticating candidate...")
+                    login_ok = await self.login()
+                    if login_ok and target_seek_id:
+                        direct_apply_url = f"https://au.seek.com/job/{target_seek_id}/apply"
+                        try:
+                            await self._safe_goto(direct_apply_url, wait_until="domcontentloaded", timeout=20000)
+                            await self._wait_for_cloudflare(15)
+                            await self._human_delay(1.5, 2.5)
+                        except Exception:
+                            pass
+
+                if "/apply" not in self.page.url or await self._is_seek_signin_form():
+                    if await self._is_seek_signin_form() or any(k in self.page.url for k in ["login.seek.com", "oauth/login"]):
+                        self._emit({
+                            "type": "apply_job_done",
+                            "job_id": job_id,
+                            "company": company,
+                            "title": title,
+                            "status": "error",
+                            "message": "SEEK authentication required to apply. Active login session missing.",
+                        })
+                        return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Authentication required for Quick Apply")
+                    if "just a moment" in (await self._safe_title()).lower() or "__cf_chl_" in self.page.url:
+                        self._emit({
+                            "type": "apply_job_done",
+                            "job_id": job_id,
+                            "company": company,
+                            "title": title,
+                            "status": "error",
+                            "message": "Cloudflare security challenge active (could not bypass automatically)",
+                        })
+                        return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Cloudflare security challenge active")
                     self._emit({
                         "type": "apply_job_done",
                         "job_id": job_id,
                         "company": company,
                         "title": title,
                         "status": "error",
-                        "message": "SEEK authentication required to apply. Active login session missing.",
+                        "message": "Could not access SEEK application wizard",
                     })
-                    return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Authentication required for Quick Apply")
-                if "just a moment" in (await self._safe_title()).lower() or "__cf_chl_" in self.page.url:
-                    self._emit({
-                        "type": "apply_job_done",
-                        "job_id": job_id,
-                        "company": company,
-                        "title": title,
-                        "status": "error",
-                        "message": "Cloudflare security challenge active (could not bypass automatically)",
-                    })
-                    return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Cloudflare security challenge active")
-                self._emit({
-                    "type": "apply_job_done",
-                    "job_id": job_id,
-                    "company": company,
-                    "title": title,
-                    "status": "error",
-                    "message": "Could not access SEEK application wizard",
-                })
-                return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Could not access SEEK application wizard")
+                    return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Could not access SEEK application wizard")
 
             # 5. Form submission loop across wizard steps
             max_steps = 8
@@ -1528,6 +2147,23 @@ for it in col.get_all_items():
 
                 logger.info(f"[Apply Step {step_num + 1}/{max_steps}] URL: {self.page.url}")
 
+                # Check if embedded sign-in form appeared during wizard
+                if await self._is_seek_signin_form():
+                    logger.info(f"[Apply Step {step_num + 1}/{max_steps}] Embedded sign-in form encountered. Authenticating candidate...")
+                    login_ok = await self.login()
+                    if not login_ok:
+                        self._emit({
+                            "type": "apply_job_done",
+                            "job_id": job_id,
+                            "company": company,
+                            "title": title,
+                            "status": "error",
+                            "message": "SEEK authentication required to apply. Active login session missing.",
+                        })
+                        return ApplyResult(job_id=job_id, company=company, title=title, status=ApplyStatus.ERROR, message="Authentication required for Quick Apply")
+                    await self._human_delay(2.0, 3.5)
+                    continue
+
                 # Check for completion screen
                 body_sample = ""
                 try:
@@ -1535,7 +2171,18 @@ for it in col.get_all_items():
                 except Exception:
                     pass
 
-                if "/success" in self.page.url or any(phrase in body_sample for phrase in ["application sent", "application submitted", "good luck", "you've applied", "has been sent"]):
+                is_success = (
+                    any(k in self.page.url for k in ["/success", "/applied", "/complete", "/confirmation"])
+                    or any(phrase in body_sample for phrase in [
+                        "application sent", "application submitted", "good luck", "you've applied",
+                        "has been sent", "application received", "thanks for applying",
+                        "thank you for applying", "your application has been sent",
+                        "your application was submitted", "applied on seek"
+                    ])
+                    or await self._is_visible("[data-automation='application-success'], [data-automation='applied-badge']", timeout=400)
+                )
+
+                if is_success:
                     logger.info(f"SEEK application successfully submitted for {company} — {title}")
                     if self.db:
                         try:
@@ -1667,12 +2314,33 @@ for it in col.get_all_items():
                     "button[type='submit']:has-text('Submit application')",
                     "button:has-text('Submit application')",
                     "[data-automation='submit-application-button']",
+                    "[data-automation='submit-application']",
                     "button[data-testid='submit-application']",
+                    "[data-automation='review-submit-button']",
+                    "[data-automation='review-and-submit-button']",
+                    "button:has-text('Submit application now')",
+                    "button:has-text('Send application')",
                 ]
                 submit_btn = None
                 for s_sel in submit_selectors:
                     candidate = self.page.locator(s_sel).last
                     if await self._is_visible(candidate, timeout=800):
+                        try:
+                            in_stepper = await self._safe_await(candidate.evaluate("""el => {
+                                let p = el.parentElement;
+                                for (let i = 0; i < 6 && p; i++) {
+                                    if (p.tagName === 'NAV' || p.tagName === 'OL' ||
+                                        p.getAttribute('role') === 'tablist' ||
+                                        p.getAttribute('role') === 'navigation' ||
+                                        (p.getAttribute('data-automation') || '').includes('stepper')) return true;
+                                    p = p.parentElement;
+                                }
+                                return false;
+                            }"""), default=False)
+                            if in_stepper:
+                                continue
+                        except Exception:
+                            pass
                         submit_btn = candidate
                         logger.info(f"[Apply Step {step_num + 1}] Found Submit button: {s_sel}")
                         break
@@ -1768,14 +2436,34 @@ for it in col.get_all_items():
                     if "/success" in self.page.url or any(phrase in body_sample for phrase in ["application sent", "application submitted", "good luck", "you've applied", "has been sent"]):
                         break
                     # Attempt any submit / action button fallback
-                    action_btn = self.page.locator("button[type='submit']:has-text('Submit'), button:has-text('Submit'), button:has-text('Send')").last
-                    if await self._is_visible(action_btn, timeout=1000):
+                    action_btn = self.page.locator(
+                        "button[type='submit']:has-text('Submit'), "
+                        "button:has-text('Submit application'), "
+                        "button:has-text('Submit'), "
+                        "button:has-text('Send application'), "
+                        "[data-automation*='submit']"
+                    ).last
+                    if await self._is_visible(action_btn, timeout=1200):
                         try:
-                            await action_btn.click(force=True, timeout=5000)
-                            await self._human_delay(2.5, 4.0)
-                            continue
-                        except Exception:
-                            pass
+                            in_nav = await self._safe_await(action_btn.evaluate("""el => {
+                                let p = el.parentElement;
+                                for (let i = 0; i < 6 && p; i++) {
+                                    if (p.tagName === 'NAV' || p.tagName === 'OL' ||
+                                        p.getAttribute('role') === 'tablist' ||
+                                        p.getAttribute('role') === 'navigation' ||
+                                        (p.getAttribute('data-automation') || '').includes('stepper')) return true;
+                                    p = p.parentElement;
+                                }
+                                return false;
+                            }"""), default=False)
+                            if not in_nav:
+                                logger.info(f"[Apply Step {step_num + 1}] Clicking fallback submit action button")
+                                await action_btn.scroll_into_view_if_needed()
+                                await action_btn.click(force=True, timeout=5000)
+                                await self._human_delay(3.0, 5.0)
+                                continue
+                        except Exception as e:
+                            logger.debug(f"Action button fallback click notice: {e}")
                     break
 
             # Final check for submission success
@@ -1785,7 +2473,18 @@ for it in col.get_all_items():
             except Exception:
                 pass
 
-            if "/success" in self.page.url or any(phrase in body_final for phrase in ["application sent", "application submitted", "good luck", "you've applied", "has been sent"]):
+            final_success = (
+                any(k in self.page.url for k in ["/success", "/applied", "/complete", "/confirmation"])
+                or any(phrase in body_final for phrase in [
+                    "application sent", "application submitted", "good luck", "you've applied",
+                    "has been sent", "application received", "thanks for applying",
+                    "thank you for applying", "your application has been sent",
+                    "your application was submitted", "applied on seek"
+                ])
+                or await self._is_visible("[data-automation='application-success'], [data-automation='applied-badge']", timeout=400)
+            )
+
+            if final_success:
                 if self.db:
                     try:
                         self.db.update_opportunity_apply_status(job_id, apply_status="applied")
@@ -1807,7 +2506,7 @@ for it in col.get_all_items():
                     message="Application submitted via SEEK Quick Apply",
                 )
 
-            if any(k in self.page.url for k in ["login.seek.com", "oauth/login"]):
+            if any(k in self.page.url for k in ["login.seek.com", "oauth/login"]) or await self._is_seek_signin_form():
                 logger.warning(f"Apply ended on login portal for {company} — {title}")
                 self._emit({
                     "type": "apply_job_done",
