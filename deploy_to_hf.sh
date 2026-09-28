@@ -42,10 +42,10 @@ src = Path('.')
 dst = Path('$TARGET_DIR')
 
 ignore_filter = shutil.ignore_patterns(
-    '.venv*', 'node_modules*', '*.db*', '*.key', 'indeed_*',
-    'profile_resumes*', 'materials*', 'rootkey.csv', '.git*',
-    'scratch*', '__pycache__*', '*.pyc', 'results.json', 'run_report.json',
-    '*.docx', '*.pdf'
+    '.venv*', 'node_modules*', '*.db*', '*.key', '*.sqlite*',
+    '*storage_state.json', '*cookies.json', 'data',
+    'rootkey.csv', '.git*', 'scratch*', '__pycache__*', '*.pyc',
+    'results.json', 'run_report.json', '*.docx', '*.pdf'
 )
 
 for item in ['app.py', 'packages.txt', 'requirements.txt', 'package.json', '.gitignore', 'run_search.py', 'model.py']:

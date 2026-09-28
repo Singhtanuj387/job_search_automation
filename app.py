@@ -20,6 +20,17 @@ except Exception as e:
 import warnings
 warnings.filterwarnings("ignore", category=ResourceWarning)
 
+# Silence non-critical BaseEventLoop destructor noise during Python GC on Linux
+def _silence_unraisable(unraisable):
+    if unraisable.exc_type is ValueError and "Invalid file descriptor" in str(unraisable.exc_value):
+        return
+    if "BaseEventLoop" in str(unraisable.object):
+        return
+    if hasattr(sys, "__unraisablehook__") and sys.__unraisablehook__ is not None:
+        sys.__unraisablehook__(unraisable)
+
+sys.unraisablehook = _silence_unraisable
+
 # 2. Install / verify Playwright Chromium on container boot
 try:
     print("[*] Checking / installing Playwright Chromium browser...")
