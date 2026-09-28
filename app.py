@@ -17,10 +17,17 @@ try:
 except Exception as e:
     print(f"[!] spaces notice: {e}")
 
+import warnings
+warnings.filterwarnings("ignore", category=ResourceWarning)
+
 # 2. Install / verify Playwright Chromium on container boot
 try:
     print("[*] Checking / installing Playwright Chromium browser...")
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        check=True,
+        close_fds=True,
+    )
     print("[✓] Playwright Chromium ready.")
 except Exception as e:
     print(f"[!] Playwright notice (non-fatal): {e}")
