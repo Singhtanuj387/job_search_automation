@@ -1,0 +1,24 @@
+# Vercel upload ignore file
+.git
+.venv
+__pycache__
+*.pyc
+node_modules
+web/frontend/node_modules
+data
+extracted_faces_yolo
+uploads
+logs
+scratch
+scratch_*
+results.json
+run_report.json
+*.docx
+*.pdf
+*.png
+*.jpg
+*.jpeg
+rootkey.csv
+.env
+.env.*
+.pytest_cache
