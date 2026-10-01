@@ -1,7 +1,10 @@
 /**
  * API client for the Job Search Automation backend.
  */
-const API_BASE = window.location.port === "5173" ? "http://127.0.0.1:8000/api" : "/api";
+const envApiUrl = typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.VITE_API_URL : null;
+const API_BASE = envApiUrl
+  ? `${envApiUrl.replace(/\/+$/, "")}/api`
+  : (typeof window !== "undefined" && window.location.port === "5173" ? "http://127.0.0.1:8000/api" : "/api");
 
 export function getSessionId() {
   let sid = localStorage.getItem("job_search_session_id");

@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "install:frontend": "npm --prefix web/frontend install",
     "dev": "npm --prefix web/frontend run dev",
-    "build": "npm --prefix web/frontend run build",
+    "build": "npm --prefix web/frontend install && npm --prefix web/frontend run build",
     "preview": "npm --prefix web/frontend run preview"
   }
 }

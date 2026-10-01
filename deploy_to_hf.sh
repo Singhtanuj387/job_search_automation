@@ -48,7 +48,7 @@ ignore_filter = shutil.ignore_patterns(
     'results.json', 'run_report.json', '*.docx', '*.pdf'
 )
 
-for item in ['app.py', 'packages.txt', 'requirements.txt', 'package.json', '.gitignore', 'run_search.py', 'model.py']:
+for item in ['app.py', 'packages.txt', 'requirements.txt', 'package.json', 'vercel.json', '.gitignore', 'run_search.py', 'model.py']:
     src_file = src / item
     if src_file.exists():
         shutil.copy2(src_file, dst / item)
