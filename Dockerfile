@@ -42,7 +42,7 @@ USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
 
-EXPOSE 7860
+EXPOSE 8000
 
-# Run FastAPI backend with Uvicorn on Hugging Face Spaces port 7860
-CMD ["uvicorn", "web.backend.app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Run FastAPI backend with Uvicorn on dynamic platform port (Render, Railway, Fly.io default $PORT, or 8000)
+CMD ["sh", "-c", "uvicorn web.backend.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
